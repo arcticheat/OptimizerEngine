@@ -457,7 +457,6 @@ namespace OptimizerEngine
                     var ValidEndDate = ValidStartDate.AddDays(CurrentInput.LengthDays - 1);
 
                     // Loop through all qualified instructors for this course
-                    // TODO: Check instructors in order of distance to the location
                     foreach (var Instructor in CourseInfo.QualifiedInstructors)
                     {
                         // Determine if this instructor is available for the range
@@ -465,6 +464,8 @@ namespace OptimizerEngine
                         {
                             Console.WriteLine($"The instructor {Instructor} is available.");
                             Result.InstrUsername = Instructor;
+                            // Set the result status to using a local instructor
+                            Result.UsingLocalInstructor = Instructors.Where(instr => instr.Username == Instructor).First().PointId == CurrentInput.LocationIdLiteral;
                             break;
                         }
                     }
@@ -508,7 +509,7 @@ namespace OptimizerEngine
                         continue;
                     }
                     // If successful, update the matrices 
-                    UpdateMatrices(ValidStartDate, ValidEndDate, CurrentInput.LocationIdLiteral, MaxClassSize, Result.InstrUsername, Result.RoomID);
+                    UpdateMatrices(ValidStartDate, ValidEndDate, CurrentInput.LocationIdLiteral, MaxClassSize, Result.InstrUsername, Result.RoomID, Result.UsingLocalInstructor);
 
                     // Found an answer so set the remaining fields for the result
                     Result.CourseID = CurrentInput.CourseId;
@@ -669,7 +670,7 @@ namespace OptimizerEngine
         /// <param name="locationIdLiteral">The location id </param>
         /// <param name="instrUsername">The instructor username</param>
         /// <param name="roomID">The room id</param>
-        private void UpdateMatrices(DateTime validStartDate, DateTime validEndDate, int locationId, int maxClassSize, string instrUsername, int roomID)
+        private void UpdateMatrices(DateTime validStartDate, DateTime validEndDate, int locationId, int maxClassSize, string instrUsername, int roomID, bool localAssignment)
         {
             // Go through each day the course will take place
             foreach(var currentDay in EachWeekDay(validStartDate, validEndDate))
@@ -678,6 +679,24 @@ namespace OptimizerEngine
                 CurrentlyReleased[LocationIndexMap[locationId], DateIndexMap[currentDayString]] += maxClassSize;
                 IsInstructorUnavailable[InstructorIndexMap[instrUsername], DateIndexMap[currentDayString]] = true;
                 IsRoomUnavailable[RoomIndexMap[roomID], DateIndexMap[currentDayString]] = true;
+            }
+
+            if (!localAssignment)
+            {
+                // Check if the day before the start day for the classs is in the index map
+                // If its not, it is either an adjacent week day but outside the range of the optimizer
+                // Or it is a weekend (the day before monday is sunday, will not be mapped in the dictionary
+                var DayBeforeAssignment = Max(validStartDate, StartDate).AddDays(-1).ToString(TIME_FORMAT);
+                if (DateIndexMap.ContainsKey(DayBeforeAssignment))
+                {
+                    IsInstructorUnavailable[InstructorIndexMap[instrUsername], DateIndexMap[DayBeforeAssignment]] = true;
+                }
+                // Do same but for the day after
+                var DayAfterAssignment = Min(validEndDate, EndDate).ToString(TIME_FORMAT);
+                if (DateIndexMap.ContainsKey(DayAfterAssignment))
+                {
+                    IsInstructorUnavailable[InstructorIndexMap[instrUsername], DateIndexMap[DayAfterAssignment]] = true;
+                }
             }
         }
     }

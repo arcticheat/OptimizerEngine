@@ -88,6 +88,9 @@ namespace OptimizerEngine.Models
         [NotMapped]
         public int Hours { get; internal set; }
 
+        [NotMapped]
+        public bool UsingLocalInstructor { get; set; }
+
         public OptimizerResult()
         {
 
