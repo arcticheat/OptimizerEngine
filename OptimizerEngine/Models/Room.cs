@@ -16,6 +16,6 @@ namespace OptimizerEngine.Models
         public bool Active { get; set; }
         public string Notes { get; set; }
         [NotMapped]
-        public List<Tuple<int, int?>> Resources = new List<Tuple<int, int?>>();
+        public Dictionary<int, int?> Resources = new Dictionary<int, int?>();
     }
 }

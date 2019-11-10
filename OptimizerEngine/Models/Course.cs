@@ -19,6 +19,6 @@ namespace OptimizerEngine.Models
         [NotMapped]
         public List<string> QualifiedInstructors = new List<string>();
         [NotMapped]
-        public List<Tuple<int, int?>> RequiredResources = new List<Tuple<int, int?>>();
+        public Dictionary<int, int?> RequiredResources = new Dictionary<int, int?>();
     }
 }

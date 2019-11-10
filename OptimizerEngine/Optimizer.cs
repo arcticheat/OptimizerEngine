@@ -16,7 +16,7 @@ namespace OptimizerEngine
         private List<Booking> Exceptions;
         private List<Location> Locations;
         private List<Course> CourseCatalog;
-        private List<Room> Rooms;
+        private Dictionary<int, Room> Rooms;
         private Dictionary<String, int> DateIndexMap;
         private Dictionary<int, int> RoomIndexMap;
         private Dictionary<string, int> InstructorIndexMap;
@@ -194,14 +194,14 @@ namespace OptimizerEngine
                 // Add to each course the required resources it needs from a room
                 context.CourseRequiredResources.ToList().
                     ForEach(required => CourseCatalog.Where(course => course.Id == required.CourseID).
-                    FirstOrDefault().RequiredResources.Add(new Tuple<int, int?>(required.ResourceID, required.Amount)));
+                    FirstOrDefault().RequiredResources[required.ResourceID] = required.Amount);
 
                 // Rooms
-                Rooms = context.Room.ToList();
+                Rooms = context.Room.ToDictionary(room => room.Id, room => room);
                 // Add to each room the resources it has
                 context.RoomHasResources.ToList().ForEach(resources => Rooms.
-                Where(room => room.Id == resources.RoomID).FirstOrDefault().
-                Resources.Add(new Tuple<int, int?> (resources.ID, resources.Amount)));
+                Where(room => room.Key == resources.RoomID).FirstOrDefault().Value.
+                Resources[resources.ID] = resources.Amount);
 
                 // Get the optimizer input data
                 Inputs = (from input in context.OptimizerInput
@@ -432,6 +432,9 @@ namespace OptimizerEngine
                 var MaxClassSize = CourseCatalog.Where(course => course.Id == CurrentInput.CourseId).First().MaxSize;
                 var ReleaseRate = Locations.Where(location => location.Id == CurrentInput.LocationIdLiteral).First().ReleaseRate;
 
+                // Obtain the information about this course in the catalog
+                var CourseInfo = CourseCatalog.Where(course => course.Id == CurrentInput.CourseId).First();
+
                 // Obtain all possible start dates (restricted by location release rate and course length)
                 var ValidStartDates = FindValidStartDates(CurrentInput.LocationIdLiteral, CurrentInput.LengthDays, MaxClassSize, ReleaseRate);
                 if (ValidStartDates.Count <= 0)
@@ -455,7 +458,7 @@ namespace OptimizerEngine
 
                     // Loop through all qualified instructors for this course
                     // TODO: Check instructors in order of distance to the location
-                    foreach (var Instructor in CourseCatalog.Where(Course => Course.Id == CurrentInput.CourseId).First().QualifiedInstructors)
+                    foreach (var Instructor in CourseInfo.QualifiedInstructors)
                     {
                         // Determine if this instructor is available for the range
                         if (IsInstructorAvailableForDateRange(Instructor, ValidStartDate, ValidEndDate))
@@ -478,8 +481,10 @@ namespace OptimizerEngine
                         continue;
                     }
                     // Loop through all local rooms for this location
-                    // TODO make sure room has resources
-                    foreach (var RoomID in Locations.Where(Loc => Loc.Code == CurrentInput.LocationId).First().LocalRooms)
+                    // but only the rooms that have the right type and quantity of resources required by this course type
+                    foreach (var RoomID in Locations.Where(Loc => Loc.Code == CurrentInput.LocationId).First().
+                        LocalRooms.Where(room => CourseInfo.RequiredResources.All(required =>
+                        Rooms[room].Resources.ContainsKey(required.Key) && Rooms[room].Resources[required.Key] >= required.Value )))
                     {
                         // Determine if this room is available 
                         if (IsRoomAvailbleForDateRange(RoomID, ValidStartDate, ValidEndDate))
