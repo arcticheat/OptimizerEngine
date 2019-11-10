@@ -5,7 +5,7 @@ using System.Text;
 
 namespace OptimizerEngine
 {
-    class ScheduledClassPrintable 
+    class OptimizerResultPrintable
     {
         //ID
         public int ID { get; set; }
@@ -19,7 +19,6 @@ namespace OptimizerEngine
         //Room ID of course
         public int RoomID { get; set; }
 
-
         //What time the class starts 
         public TimeSpan StartTime { get; set; }
 
@@ -32,22 +31,19 @@ namespace OptimizerEngine
         //Day the class ends
         public DateTime EndDate { get; set; }
 
-        //is hidden flag
-        public bool Hidden { get; set; }
+        public string Instructor { get; set; }
 
-
-        public ScheduledClassPrintable(ScheduledClass scheduled)
+        public OptimizerResultPrintable(OptimizerResult result)
         {
-            ID = scheduled.ID;
-            CourseID = scheduled.CourseID;
-            LocationID = scheduled.LocationID;
-            RoomID = scheduled.RoomID;
-            StartTime = scheduled.StartTime;
-            EndTime = scheduled.EndTime;
-            StartDate = scheduled.StartDate;
-            EndDate = scheduled.EndDate;
-            Hidden = scheduled.Hidden;
-
+            ID = result.ID;
+            CourseID = result.CourseID;
+            LocationID = result.LocationID;
+            RoomID = result.RoomID;
+            StartTime = result.StartTime;
+            EndTime = result.EndTime;
+            StartDate = result.StartDate;
+            EndDate = result.EndDate;
+            Instructor = result.InstrUsername;
         }
     }
 }

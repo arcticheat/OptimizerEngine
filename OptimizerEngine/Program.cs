@@ -23,7 +23,7 @@ namespace OptimizerEngine
                 EndDate = Convert.ToDateTime(Console.ReadLine());
             }
 
-            Console.WriteLine($"Optimizing from {StartDate} to {EndDate}");
+            Console.WriteLine($"The Optimizer range is set from {StartDate} to {EndDate}");
 
             optimizer.PullInData(showSetup, StartDate, EndDate);
 

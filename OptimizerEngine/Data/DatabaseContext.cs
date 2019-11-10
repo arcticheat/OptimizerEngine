@@ -24,6 +24,7 @@ namespace OptimizerEngine.Models
         public virtual DbSet<ClassRoster> ClassRoster { get; set; }
         public virtual DbSet<Course> Course { get; set; }
         public virtual DbSet<CourseHistory> CourseHistory { get; set; }
+        public virtual DbSet<CourseRequiredResources> CourseRequiredResources { get; set; }
         public virtual DbSet<InstructorOfClass> InstructorOfClass { get; set; }
         public virtual DbSet<InstructorStatus> InstructorStatus { get; set; }
         public virtual DbSet<Location> Location { get; set; }
@@ -33,6 +34,7 @@ namespace OptimizerEngine.Models
         public virtual DbSet<RequestedCourse> RequestedCourse { get; set; }
         public virtual DbSet<Role> Role { get; set; }
         public virtual DbSet<Room> Room { get; set; }
+        public virtual DbSet<RoomHasResources> RoomHasResources { get; set; }
         public virtual DbSet<ScheduledClass> ScheduledClass{get; set; }
         public virtual DbSet<Status> Status { get; set; }
         public virtual DbSet<User> User { get; set; }

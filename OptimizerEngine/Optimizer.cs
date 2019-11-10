@@ -16,6 +16,7 @@ namespace OptimizerEngine
         private List<Booking> Exceptions;
         private List<Location> Locations;
         private List<Course> CourseCatalog;
+        private List<Room> Rooms;
         private Dictionary<String, int> DateIndexMap;
         private Dictionary<int, int> RoomIndexMap;
         private Dictionary<string, int> InstructorIndexMap;
@@ -49,6 +50,29 @@ namespace OptimizerEngine
                     yield return day;
                 }
             }
+        }
+
+        /// <summary>
+        /// Returns the work day however many days after the start date 
+        /// </summary>
+        /// <param name="startDate">The original date</param>
+        /// <param name="workdays">How many days to go backwards from</param>
+        /// <param name="substract">Set true to subtract week days instead</param>
+        /// <returns></returns>
+        public static DateTime AddWeekDays(DateTime startDate, int workdays, bool subtract = false)
+        {
+            DateTime date = startDate;
+            while (workdays > 0)
+            {
+                if (subtract)
+                    date = date.AddDays(-1);
+                else
+                    date = date.AddDays(1);
+                if (date.DayOfWeek < DayOfWeek.Saturday &&
+                    date.DayOfWeek > DayOfWeek.Sunday)
+                    workdays--;
+            }
+            return date;
         }
 
         public static void PrintDate2DArray<T1, T2>(T1[,] matrix, DateTime StartDate, DateTime EndDate, List<T2> RowNames)
@@ -148,6 +172,7 @@ namespace OptimizerEngine
         /// <param name="EndDate">The end of the optimizaiton range</param>
         internal void PullInData(bool showSetup, DateTime Start, DateTime End)
         {
+            Console.WriteLine("Pulling in data from the database...\n");
             StartDate = Start;
             EndDate = End;
             using (var context = new DatabaseContext())
@@ -157,11 +182,26 @@ namespace OptimizerEngine
 
                 // Course Catalog
                 CourseCatalog = context.Course.ToList();
+
+                // Add to each course the instructors qualified to teach them
                 context.InstructorStatus.
                     Where(status => status.Deleted == false).ToList().
                     ForEach(status => CourseCatalog.
-                    Where(course => course.Id == status.CourseId).First().
+                    Where(course => course.Id == status.CourseId)
+                    .FirstOrDefault().
                     QualifiedInstructors.Add(status.InstructorId));
+
+                // Add to each course the required resources it needs from a room
+                context.CourseRequiredResources.ToList().
+                    ForEach(required => CourseCatalog.Where(course => course.Id == required.CourseID).
+                    FirstOrDefault().RequiredResources.Add(new Tuple<int, int?>(required.ResourceID, required.Amount)));
+
+                // Rooms
+                Rooms = context.Room.ToList();
+                // Add to each room the resources it has
+                context.RoomHasResources.ToList().ForEach(resources => Rooms.
+                Where(room => room.Id == resources.RoomID).FirstOrDefault().
+                Resources.Add(new Tuple<int, int?> (resources.ID, resources.Amount)));
 
                 // Get the optimizer input data
                 Inputs = (from input in context.OptimizerInput
@@ -360,6 +400,7 @@ namespace OptimizerEngine
                     PrintDate2DArray<bool, string>(IsInstructorUnavailable, StartDate, EndDate, InstructorIndexMap.Keys.ToList());
                 }
             }
+            Console.WriteLine("Data loading complete.\n");
         }
 
         /// <summary>
@@ -368,80 +409,155 @@ namespace OptimizerEngine
         /// </summary>
         internal void OptimizeGreedy()
         {
+            Console.WriteLine("Optimizing...\n");
+            // Container for the results
             var Results = new List<OptimizerResult>();
+
+            // Container for inputs that were unable to be scheduled
+            var FailedToSchedule = new List<OptimizerInput>();
+
             // Loop through each input from the optimizer
-            foreach(var CurrentInput in Inputs)
+            foreach (var CurrentInput in Inputs)
             {
-                // scheduling for this input
-                var Result = new OptimizerResult();
+                Console.WriteLine($"Calculating result for input ID {CurrentInput.Id}... ");
 
-                // Consider possible start dates (restricted by location release rate)
-                var ValidStartDates = FindValidStartDates(CurrentInput.LocationId, CurrentInput.CourseId);
-
-                // Loop through all qualified local instructors for this course
-                // TODO: Check instructors in order of distance to the lcoation
-                foreach (var Instructor in CourseCatalog.Where(Course => Course.Id == CurrentInput.CourseId).First().QualifiedInstructors)
+                // result object for this input
+                var Result = new OptimizerResult
                 {
-                    // Determine if this instructor is available for the range
-                    if (IsInstructorAvailableInRange(Instructor, ValidStartDates))
-                    {
-                        Result.InstrUsername = Instructor;
-                    }
-                    // If unavailable, consider the next instructor
-                    else
-                    {
-                        continue;
-                    }
-                 
+                    InstrUsername = "",
+                    RoomID = 0
+                };
+
+                // Obtain the class max size and the location release rate for the function call to find the valid start dates
+                var MaxClassSize = CourseCatalog.Where(course => course.Id == CurrentInput.CourseId).First().MaxSize;
+                var ReleaseRate = Locations.Where(location => location.Id == CurrentInput.LocationIdLiteral).First().ReleaseRate;
+
+                // Obtain all possible start dates (restricted by location release rate and course length)
+                var ValidStartDates = FindValidStartDates(CurrentInput.LocationIdLiteral, CurrentInput.LengthDays, MaxClassSize, ReleaseRate);
+                if (ValidStartDates.Count <= 0)
+                {
+                    Console.WriteLine($"The input could not be scheduled because the location {CurrentInput.LocationId} would exceed its release rate.\n");
+                    CurrentInput.Reason = "Release rate would be exceeded.";
+                    FailedToSchedule.Add(CurrentInput);
                 }
 
-                    // If no instructors availble, break
+                // Counter to keep track of inputs that need multiple iterations scheduled 
+                var currentIterationForThisInput = 0;
 
-                    // Loop through all local rooms for this location
+                // Loop through each day within the optimizer range that the course could start on
+                var lastDate = ValidStartDates.LastOrDefault();
+                
+                foreach (var ValidStartDate in ValidStartDates)
+                {
+                    Console.WriteLine($"Searching on the start date {ValidStartDate.ToString(TIME_FORMAT)} for an instructor and room.");
+                    // Set the end date for this range based off of the course length
+                    var ValidEndDate = ValidStartDate.AddDays(CurrentInput.LengthDays - 1);
 
-                    // Loop through all days in the current course range
-
-                    // If room is unavailable, go to next room
-
-                    // If no room is availble, break
-
-
-                    // Loop through each day of the range of this course if it started on ValidStartDate
-                    foreach (var CurrentDay in EachWeekDay(ValidStartDate, ValidStartDate.AddDays(CurrentInput.LengthDays - 1)))
+                    // Loop through all qualified instructors for this course
+                    // TODO: Check instructors in order of distance to the location
+                    foreach (var Instructor in CourseCatalog.Where(Course => Course.Id == CurrentInput.CourseId).First().QualifiedInstructors)
                     {
-                        if(IsInstructorUnavailable[InstructorIndexMap[Instructor.Username]])
-
-                        Result.Instructor = Instructor.Username;
-
-                        // Try to assign a room
-                        var Room = FindAvailableRoom(CurrentDay, CurrentInput.CourseId, CurrentInput.LocationId);
-                        if (Room == null)
+                        // Determine if this instructor is available for the range
+                        if (IsInstructorAvailableForDateRange(Instructor, ValidStartDate, ValidEndDate))
                         {
-                            continue;
+                            Console.WriteLine($"The instructor {Instructor} is available.");
+                            Result.InstrUsername = Instructor;
+                            break;
                         }
-                        Result.RoomID = Room;
                     }
-
+                    // If no instructor is available, consider the next start date
+                    if (Result.InstrUsername == "")
+                    {
+                        Console.WriteLine("No instructors are available. Moving on to the next valid start date.");
+                        if (ValidStartDate == lastDate)
+                        {
+                            Console.WriteLine($"The input could not be scheduled because no instructor is available.\n");
+                            CurrentInput.Reason = "No instructor is available.";
+                            FailedToSchedule.Add(CurrentInput);
+                        }
+                        continue;
+                    }
+                    // Loop through all local rooms for this location
+                    // TODO make sure room has resources
+                    foreach (var RoomID in Locations.Where(Loc => Loc.Code == CurrentInput.LocationId).First().LocalRooms)
+                    {
+                        // Determine if this room is available 
+                        if (IsRoomAvailbleForDateRange(RoomID, ValidStartDate, ValidEndDate))
+                        {
+                            Console.WriteLine($"The Room {RoomID} is available.");
+                            Result.RoomID = RoomID;
+                            break;
+                        }
+                    }
+                    // If no room is available, consider the next start date
+                    if (Result.RoomID == 0)
+                    {
+                        Console.WriteLine("No room is available. Moving on to the next valid start date.");
+                        Result.InstrUsername = "";
+                        if (ValidStartDate == lastDate)
+                        {
+                            Console.WriteLine($"The above input could not be scheduled because no room is available.\n");
+                            CurrentInput.Reason = "No local room is available.";
+                            FailedToSchedule.Add(CurrentInput);
+                        }
+                        continue;
+                    }
+                    // If successful, update the matrices 
+                    UpdateMatrices(ValidStartDate, ValidEndDate, CurrentInput.LocationIdLiteral, MaxClassSize, Result.InstrUsername, Result.RoomID);
 
                     // Found an answer so set the remaining fields for the result
                     Result.CourseID = CurrentInput.CourseId;
                     Result.LocationID = Locations.Where(Loc => Loc.Code == CurrentInput.LocationId).First().Id;
                     Result.Cancelled = false;
-                    Result.StartTime = TimeSpan(); 
-                    Result.EndTime = 
-                    Result.StartTime
+                    Result.StartTime = ValidStartDate - ValidStartDate;
+                    Result.EndTime = ValidStartDate - ValidStartDate;
+                    Result.StartDate = ValidStartDate;
+                    Result.EndDate = ValidStartDate.AddDays(CurrentInput.LengthDays - 1);
+                    Result.RequestType = "Optimizer";
+                    Result.Requester = "Optimizer";
+                    Result.Hidden = true;
+                    Result.CreationTimestamp = DateTime.Today;
+                    Result.AttendanceLocked = false;
 
+                    Console.WriteLine($"The course will be scheduled from {ValidStartDate.ToString(TIME_FORMAT)}" +
+                        $" to {ValidStartDate.AddDays(CurrentInput.LengthDays - 1).ToString(TIME_FORMAT)}  with the room and instructor listed above.");
+                    Console.WriteLine();
+
+                    // Add to the result container
+                    Results.Add(Result);
+
+                    // Keep running if the same course needs to be scheduled additional times
+                    if (currentIterationForThisInput >= CurrentInput.NumTimesToRun)
+                    {
+                        Result = new OptimizerResult
+                        {
+                            InstrUsername = "",
+                            RoomID = 0
+                        };
+                    }
+                    // Otherwise, continue to the next input
+                    else
+                    {
+                        break;
+                    }
                 }
-
-
-                // Try to assign an outsourced instructor
-
-                // Try to assign a Room
-
-                // If successful, update the matrices 
             }
+            Console.WriteLine("Optimizer Successful Results");
+            ConsoleTable.From<OptimizerResultPrintable>(Results.Select(result => new OptimizerResultPrintable(result))).Write(Format.MarkDown);
+            Console.WriteLine("");
+
+            if (FailedToSchedule.Count > 0)
+            {
+                Console.WriteLine("Optimizer Failed Results");
+                ConsoleTable.From<OptimizerInput>(FailedToSchedule).Write(Format.MarkDown);
+                Console.WriteLine();
+            }
+
             // Add the results to the table
+
             // Save data to the context
+
+            Console.WriteLine("Optimization Complete.\n");
         }
 
         /// <summary>
@@ -450,9 +566,52 @@ namespace OptimizerEngine
         /// <param name="locationId">The location the class is to be scheduled at</param>
         /// <param name="courseId">The id of the course type being scheduled</param>
         /// <returns>A collection of valid start days for this class</returns>
-        private List<DateTime> FindValidStartDates(string locationId, int courseId)
+        private List<DateTime> FindValidStartDates(int locationId, int classLengthDays, int classMaxSize, int? releaseRate)
         {
-            throw new NotImplementedException();
+            // Check if releaseRate was nullable from the table
+            if (!releaseRate.HasValue)
+            {
+                throw new Exception($"The location with the id: {locationId}, has a null value from the database. The optimizer cannot calcualte without a release rate");
+            }
+
+            // Create container for the answers
+            var ValidStartDates = new List<DateTime>();
+
+            // Variable used to skip days when a date exceeds the release rate
+            // Example: Day 2 of a 5 day course starting on a monday will break the release rate
+            // Skip the starting day to Wednesday because we already know Tuesday won't work
+            int DaysToSkip = 0; 
+
+            // Loop through each possible start date for this class, from the beginning of the optimizer range
+            // until the last day the class can start and end within the range
+            foreach(var FirstDay in EachWeekDay(StartDate, AddWeekDays(EndDate, classLengthDays - 1, true)))
+            {
+                // If there are days to skip, decrement the counter and continue
+                if (DaysToSkip-- > 0)
+                    continue;
+                // Flag used to flip if the range doesn't work
+                bool ReleaseRateSatisfied = true;
+                // Loop through the days the course would take place 
+                foreach(var CurrentDay in EachWeekDay(FirstDay, AddWeekDays(FirstDay, classLengthDays - 1)))
+                {
+                    // If adding the class size would exceed the release rate at this location, we can't schedule the course in this range
+                    if (CurrentlyReleased[LocationIndexMap[locationId], DateIndexMap[CurrentDay.ToString(TIME_FORMAT)]] + classMaxSize > releaseRate)
+                    {
+                        // Set how many days to skip so that the foreach starts on the day after this one
+                        // Example, we started checking from a Monday for a 5 day class, and Wednesday won't work, so we will set DaysToSkip to 2
+                        // and we will skip tuesday and wednesay and start on thursday again which is the next day that the course can be scheduled
+                        DaysToSkip = (int)(CurrentDay - FirstDay).TotalDays;
+                        ReleaseRateSatisfied = false;
+                        break;
+                    }
+                }
+                // Add this day to valid start dates if the whole range was satisfied
+                if (ReleaseRateSatisfied)
+                {
+                    ValidStartDates.Add(FirstDay);
+                }
+            }
+            return ValidStartDates;
         }
 
         /// <summary>
@@ -462,18 +621,59 @@ namespace OptimizerEngine
         /// <param name="validStartDate">The first day of the range</param>
         /// <param name="endDate">The last day of the range</param>
         /// <returns>True if the instructor is available and false if they are not</returns>
-        private bool IsInstructorAvailableForRange(string instructor, DateTime validStartDate, DateTime endDate)
+        private bool IsInstructorAvailableForDateRange(string instructor, DateTime startDate, DateTime endDate)
         {
             // Loop through all days in the current course range
-            foreach (var CurrentDay in EachWeekDay(validStartDate, endDate))
+            foreach (var CurrentDay in EachWeekDay(startDate, endDate))
             {
-                // If instructor is unavailable, go to next instructor
+                // If instructor is unavailable for any day, return false
                 if (IsInstructorUnavailable[InstructorIndexMap[instructor], DateIndexMap[CurrentDay.ToString(TIME_FORMAT)]])
                 {
                     return false;
                 }
             }
             return true;
+        }
+
+        /// <summary>
+        /// Determines if a room is availble for the range of days
+        /// </summary>
+        /// <param name="roomID">The room's id</param>
+        /// <param name="validStartDate">The first day of the range</param>
+        /// <param name="validEndDate">The last day of the range</param>
+        /// <returns></returns>
+        private bool IsRoomAvailbleForDateRange(int roomID, DateTime startDate, DateTime endDate)
+        {
+            // Loop through all the days in the current date range
+            foreach(var CurrentDay in EachWeekDay(startDate, endDate))
+            {
+                // If room is unavailable for any day, return false
+                if (IsRoomUnavailable[RoomIndexMap[roomID], DateIndexMap[CurrentDay.ToString(TIME_FORMAT)]])
+                {
+                    return false;
+                }
+            }
+            return true;
+        }
+
+        /// <summary>
+        /// Updates the three matrices to show the unavailability from the new result
+        /// </summary>
+        /// <param name="validStartDate">The start day for the optimizer result</param>
+        /// <param name="validEndDate">The end day for the optimzer result</param>
+        /// <param name="locationIdLiteral">The location id </param>
+        /// <param name="instrUsername">The instructor username</param>
+        /// <param name="roomID">The room id</param>
+        private void UpdateMatrices(DateTime validStartDate, DateTime validEndDate, int locationId, int maxClassSize, string instrUsername, int roomID)
+        {
+            // Go through each day the course will take place
+            foreach(var currentDay in EachWeekDay(validStartDate, validEndDate))
+            {
+                var currentDayString = currentDay.ToString(TIME_FORMAT);
+                CurrentlyReleased[LocationIndexMap[locationId], DateIndexMap[currentDayString]] += maxClassSize;
+                IsInstructorUnavailable[InstructorIndexMap[instrUsername], DateIndexMap[currentDayString]] = true;
+                IsRoomUnavailable[RoomIndexMap[roomID], DateIndexMap[currentDayString]] = true;
+            }
         }
     }
 }

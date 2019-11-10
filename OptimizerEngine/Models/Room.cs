@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.ComponentModel.DataAnnotations.Schema;
 
 namespace OptimizerEngine.Models
 {
@@ -14,5 +15,7 @@ namespace OptimizerEngine.Models
         public string ProjectionNotes { get; set; }
         public bool Active { get; set; }
         public string Notes { get; set; }
+        [NotMapped]
+        public List<Tuple<int, int?>> Resources = new List<Tuple<int, int?>>();
     }
 }

@@ -17,6 +17,8 @@ namespace OptimizerEngine.Models
         public bool IsActive { get; set; }
         public long Id { get; set; }
         [NotMapped]
-        public List<string> QualifiedInstructors { get; set; }
+        public List<string> QualifiedInstructors = new List<string>();
+        [NotMapped]
+        public List<Tuple<int, int?>> RequiredResources = new List<Tuple<int, int?>>();
     }
 }
