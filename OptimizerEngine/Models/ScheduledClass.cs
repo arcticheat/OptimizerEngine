@@ -4,7 +4,7 @@ using System.Linq;
 using System.Threading.Tasks;
 using System.ComponentModel.DataAnnotations.Schema;
 
-namespace OptimizerEngine.Models
+namespace LSS.Models
 {
     public class ScheduledClass
     {
@@ -52,10 +52,10 @@ namespace OptimizerEngine.Models
         public bool Hidden { get; set; }
 
         //When was this class created 
-        public DateTime CreationTimestamp { get; set; }
+        public DateTime? CreationTimestamp { get; set; }
 
         //Is the attendance locked
-        public bool AttendanceLocked { get; set; }
+        public bool? AttendanceLocked { get; set; }
 
         //Code why the course is cancelled
         public int? CancelledCodeID { get; set; }
@@ -84,6 +84,7 @@ namespace OptimizerEngine.Models
         //Course length in hours
         [NotMapped]
         public int Hours { get; internal set; }
+        
         [NotMapped]
         public int ClassSizeLimit { get; set; }
     }

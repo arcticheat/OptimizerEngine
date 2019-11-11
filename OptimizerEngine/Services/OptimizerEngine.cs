@@ -1,12 +1,12 @@
 ﻿using ConsoleTables;
-using OptimizerEngine.Models;
+using LSS.Models;
 using System;
 using System.Collections.Generic;
 using System.Linq;
 using Microsoft.EntityFrameworkCore;
 using System.Text;
 
-namespace OptimizerEngine.Services
+namespace LSS.Services
 {
     public class OptimizerEngine
     {
@@ -28,6 +28,13 @@ namespace OptimizerEngine.Services
         public string TIME_FORMAT = "MM/dd/yyyy";
         public DateTime StartDate;
         public DateTime EndDate;
+
+        private DatabaseContext context;
+
+        public OptimizerEngine(DatabaseContext _context)
+        {
+            context = _context;
+        }
 
         /// <summary>
         /// The optimizer will calculate a single collection of optimizer results created from the optimizer input
@@ -52,17 +59,17 @@ namespace OptimizerEngine.Services
                 };
 
                 // Obtain the class max size and the location release rate for the function call to find the valid start dates
-                var MaxClassSize = CourseCatalog.Where(course => course.Id == CurrentInput.CourseId).First().MaxSize;
-                var ReleaseRate = Locations.Where(location => location.Id == CurrentInput.LocationIdLiteral).First().ReleaseRate;
+                var MaxClassSize = CourseCatalog.Where(course => course.ID == CurrentInput.CourseId).First().MaxSize;
+                var ReleaseRate = Locations.Where(location => location.ID == CurrentInput.LocationIdLiteral).First().ReleaseRate;
 
                 // Obtain the information about this course in the catalog
-                var CourseInfo = CourseCatalog.Where(course => course.Id == CurrentInput.CourseId).First();
+                var CourseInfo = CourseCatalog.Where(course => course.ID == CurrentInput.CourseId).First();
 
                 // Obtain all possible start dates (restricted by location release rate and course length)
                 var ValidStartDates = FindValidStartDates(CurrentInput.LocationIdLiteral, CurrentInput.LengthDays, MaxClassSize, ReleaseRate);
                 if (ValidStartDates.Count <= 0)
                 {
-                    Console.WriteLine($"The input could not be scheduled because the location {CurrentInput.LocationId} would exceed its release rate.\n");
+                    Console.WriteLine($"The input could not be scheduled because the location {CurrentInput.LocationID} would exceed its release rate.\n");
                     CurrentInput.Reason = "Release rate would be exceeded.";
                 }
 
@@ -87,7 +94,7 @@ namespace OptimizerEngine.Services
                             Console.WriteLine($"The instructor {Instructor} is available.");
                             Result.InstrUsername = Instructor;
                             // Set the result status to using a local instructor
-                            Result.UsingLocalInstructor = Instructors.Where(instr => instr.Username == Instructor).First().PointId == CurrentInput.LocationIdLiteral;
+                            Result.UsingLocalInstructor = Instructors.Where(instr => instr.Username == Instructor).First().PointID == CurrentInput.LocationIdLiteral;
                             break;
                         }
                     }
@@ -104,9 +111,9 @@ namespace OptimizerEngine.Services
                     }
                     // Loop through all local rooms for this location
                     // but only the rooms that have the right type and quantity of resources required by this course type
-                    foreach (var RoomID in Locations.Where(Loc => Loc.Code == CurrentInput.LocationId).First().
+                    foreach (var RoomID in Locations.Where(Loc => Loc.Code == CurrentInput.LocationID).First().
                         LocalRooms.Where(room => CourseInfo.RequiredResources.All(required =>
-                        Rooms[room].Resources.ContainsKey(required.Key) && Rooms[room].Resources[required.Key] >= required.Value )))
+                        Rooms[room].Resources_dict.ContainsKey(required.Key) && Rooms[room].Resources_dict[required.Key] >= required.Value )))
                     {
                         // Determine if this room is available 
                         if (IsRoomAvailbleForDateRange(RoomID, ValidStartDate, ValidEndDate))
@@ -133,7 +140,7 @@ namespace OptimizerEngine.Services
 
                     // Found an answer so set the remaining fields for the result
                     Result.CourseID = CurrentInput.CourseId;
-                    Result.LocationID = Locations.Where(Loc => Loc.Code == CurrentInput.LocationId).First().Id;
+                    Result.LocationID = Locations.Where(Loc => Loc.Code == CurrentInput.LocationID).First().ID;
                     Result.Cancelled = false;
                     Result.StartTime = ValidStartDate - ValidStartDate;
                     Result.EndTime = ValidStartDate - ValidStartDate;
@@ -180,23 +187,21 @@ namespace OptimizerEngine.Services
                 Console.WriteLine();
             }
 
-            using (var context = new DatabaseContext())
+
+            // Add the results to the table
+            foreach(var result in Results)
             {
-                // Add the results to the table
-                foreach(var result in Results)
-                {
-                    result.CreationTimestamp = DateTime.Today;
-                    context.Entry(result).State = result.ID == 0 ? EntityState.Added : EntityState.Modified;
-                }
-                foreach(var input in Inputs)
-                {
-                    context.Entry(input).State = input.Id == 0 ? EntityState.Added : EntityState.Modified;
-                }
-
-                // Save data to the context
-                context.SaveChanges();
-
+                result.CreationTimestamp = DateTime.Today;
+                context.Entry(result).State = result.ID == 0 ? EntityState.Added : EntityState.Modified;
             }
+            foreach(var input in Inputs)
+            {
+                context.Entry(input).State = input.Id == 0 ? EntityState.Added : EntityState.Modified;
+            }
+
+            // Save data to the context
+            context.SaveChanges();
+
 
 
             Console.WriteLine("Optimization Complete.\n");

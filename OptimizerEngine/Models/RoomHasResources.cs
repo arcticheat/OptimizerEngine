@@ -1,8 +1,10 @@
 ﻿using System;
 using System.Collections.Generic;
-using System.Text;
+using System.ComponentModel.DataAnnotations.Schema;
+using System.Linq;
+using System.Threading.Tasks;
 
-namespace OptimizerEngine.Models
+namespace LSS.Models
 {
     public class RoomHasResources
     {
@@ -18,5 +20,8 @@ namespace OptimizerEngine.Models
         //Amount of resource if applicable
         public int? Amount { get; set; }
 
+        //Description of resource
+        [NotMapped]
+        public string ResourceDescription { get; set; }
     }
 }

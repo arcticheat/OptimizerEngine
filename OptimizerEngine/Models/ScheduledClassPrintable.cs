@@ -1,9 +1,8 @@
-﻿using OptimizerEngine.Models;
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Text;
 
-namespace OptimizerEngine
+namespace LSS.Models
 {
     class ScheduledClassPrintable 
     {

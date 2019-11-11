@@ -1,12 +1,19 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Linq;
+using System.Threading.Tasks;
 
-namespace OptimizerEngine.Models
+namespace LSS.Models
 {
-    public partial class ClassNumberOfSubject
+    public class ClassNumberOfSubject
     {
-        public int Id { get; set; }
-        public int ScheduledClassId { get; set; }
+        //ID
+        public int ID { get; set; }
+
+        //Scheduled Class ID
+        public int ScheduledClassID { get; set; }
+
+        //Number of Subjects the scheduled class has 
         public int NumberOfSubjects { get; set; }
     }
 }

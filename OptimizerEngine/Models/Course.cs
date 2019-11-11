@@ -1,21 +1,51 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
+using System.Linq;
+using System.Threading.Tasks;
 
-namespace OptimizerEngine.Models
+namespace LSS.Models
 {
-    public partial class Course
+    public class Course
     {
-        public string Code { get; set; }
-        public string Title { get; set; }
-        public string Description { get; set; }
-        public string Atachapter { get; set; }
+        //ID
+        public long ID { get; set; }
+
+        //Course Code
+        public String Code { get; set; }
+
+        //Title of the course
+        public String Title { get; set; }
+
+        //Description of course
+        public String Description { get; set; }
+
+        //ATAChapter
+        public String ATAChapter { get; set; }
+
+        //Hours the course has
         public int Hours { get; set; }
+
+        //Max class size
         public int MaxSize { get; set; }
-        public string SpecialReq { get; set; }
-        public string Comments { get; set; }
+
+        //Any special requirements this course has
+        public String SpecialReq { get; set; }
+
+        //Comments
+        public String Comments { get; set; }
+
+        //active flag
         public bool IsActive { get; set; }
-        public long Id { get; set; }
+
+        //Categories this course falls into
+        [NotMapped]
+        public String[] CategoriesArray { get; set; }
+
+        //Resources this course requires (for scheduling a room)
+        [NotMapped]
+        public CourseRequiredResources[] Resources {get; set;}
         [NotMapped]
         public List<string> QualifiedInstructors = new List<string>();
         [NotMapped]

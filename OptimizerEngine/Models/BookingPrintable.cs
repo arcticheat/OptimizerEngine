@@ -1,9 +1,8 @@
-﻿using OptimizerEngine.Models;
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Text;
 
-namespace OptimizerEngine
+namespace LSS.Models
 {
 
     class BookingPrintable
@@ -18,12 +17,12 @@ namespace OptimizerEngine
 
         public BookingPrintable (Booking book)
         {
-            Id = book.Id;
-            RequestForId = book.RequestForId;
-            CodeId = book.CodeId;
+            Id = book.ID;
+            RequestForId = book.RequestForID;
+            CodeId = book.CodeID;
             StartDate = book.StartDate;
             EndDate = book.EndDate;
-            LocationId = book.LocationId;
+            LocationId = book.LocationID;
             StartTime = book.StartTime;
         }
     }

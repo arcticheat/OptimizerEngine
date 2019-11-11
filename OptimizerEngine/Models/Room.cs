@@ -1,21 +1,43 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.ComponentModel.DataAnnotations.Schema;
+using System.Linq;
+using System.Threading.Tasks;
 
-namespace OptimizerEngine.Models
+namespace LSS.Models
 {
-    public partial class Room
+    public class Room
     {
-        public int Id { get; set; }
-        public string Station { get; set; }
-        public string Number { get; set; }
-        public string Location { get; set; }
-        public string Owner { get; set; }
-        public string RoomType { get; set; }
-        public string ProjectionNotes { get; set; }
+        //Room ID
+        public int ID { get; set; }
+
+        //Where the room is located
+        public String Station { get; set; }
+
+        //Room number
+        public String Number { get; set; }
+
+        //What building the room is in
+        public String Location { get; set; }
+
+        //Owner of the room
+        public String Owner { get; set; }
+
+        //Type of room 
+        public String RoomType { get; set; }
+
+        //is room active
         public bool Active { get; set; }
-        public string Notes { get; set; }
+
+        //Notes
+        public String Notes { get; set; }
+
+        //List of resources the room has 
         [NotMapped]
-        public Dictionary<int, int?> Resources = new Dictionary<int, int?>();
+        public RoomHasResources[] Resources { get; set; }
+        [NotMapped]
+        public Dictionary<int, int?> Resources_dict = new Dictionary<int, int?>();
     }
+
+    
 }
