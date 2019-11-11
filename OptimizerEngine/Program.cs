@@ -1,4 +1,5 @@
-﻿using System;
+﻿using OptimizerEngine.Services;
+using System;
 using System.IO;
 
 namespace OptimizerEngine
@@ -7,9 +8,9 @@ namespace OptimizerEngine
     {
         static void Main(string[] args)
         {
-            var optimizer = new Optimizer();
             bool askForInput = false;
             bool showSetup = true;
+            var builder = new Services.OptimizerEngineBuilder(showSetup);
 
             DateTime StartDate = Convert.ToDateTime("11/4/2019");
             DateTime EndDate = Convert.ToDateTime("11/15/2019");
@@ -25,9 +26,10 @@ namespace OptimizerEngine
 
             Console.WriteLine($"The Optimizer range is set from {StartDate} to {EndDate}");
 
-            optimizer.PullInData(showSetup, StartDate, EndDate);
+            var engine = builder.Build(StartDate, EndDate);
 
-            optimizer.OptimizeGreedy();
+            engine.OptimizeGreedy();
+
         }
     }
 }
