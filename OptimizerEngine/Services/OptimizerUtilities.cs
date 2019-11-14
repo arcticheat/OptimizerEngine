@@ -1,6 +1,7 @@
 ﻿using OptimizerEngine.Models;
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Text;
 
 namespace OptimizerEngine.Services
@@ -139,6 +140,26 @@ namespace OptimizerEngine.Services
 
             }
             Console.WriteLine("");
+        }
+
+        internal static void Print2dDictionary(Dictionary<int, Dictionary<string, bool>> dict)
+        {
+            var output = "| ID | ";
+            output += "|----|------";
+
+            foreach (var firstPair in dict)
+            {
+                output += "| " + firstPair.Key;
+                if (firstPair.Key / 10 == 0)
+                    output += " ";
+                output += " | ";
+                foreach (var secondPair in firstPair.Value)
+                {
+                    output += secondPair.Value + ", ";
+                }
+                output = output.Substring(0, output.Length - 2);
+                output += '\n';
+            }
         }
     }
 }

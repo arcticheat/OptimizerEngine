@@ -11,6 +11,10 @@ namespace OptimizerEngine.Services
     {
         private OptimizerEngine Engine;
         private bool ShowDebugMessages;
+        public Dictionary<int, Dictionary<string, bool>> IsRoomUnavailable = new Dictionary<int, Dictionary<string, bool>>();
+        public Dictionary<string, Dictionary<string, bool>> IsInstructorUnavailable = new Dictionary<string, Dictionary<string, bool>>();
+        public Dictionary<int, Dictionary<string, int>> CurrentlyReleased = new Dictionary<int, Dictionary<string, int>>();
+        public string TIME_FORMAT = "MM/dd/yyyy";
 
         public OptimizerEngineBuilder(bool debug = false)
         {
@@ -27,6 +31,7 @@ namespace OptimizerEngine.Services
         internal OptimizerEngine Build(DateTime Start, DateTime End)
         {
             if (ShowDebugMessages) Console.WriteLine("Pulling in data from the database...\n");
+            Engine.ShowDebugMessages = ShowDebugMessages;
             Engine.StartDate = Start;
             Engine.EndDate = End;
             using (var context = new DatabaseContext())
@@ -79,6 +84,7 @@ namespace OptimizerEngine.Services
                               CourseId = (int)course.Id,
                               LocationIdLiteral = location.Id
                           }).ToList<OptimizerInput>();
+                Engine.InputCount = Engine.Inputs.Count;
                 if (ShowDebugMessages)
                 {
                     Console.WriteLine("Optimizer Inputs");
@@ -96,7 +102,7 @@ namespace OptimizerEngine.Services
                     )).ToList();
                 if (ShowDebugMessages)
                 {
-                    Console.WriteLine("Current Schedule:");
+                    Console.WriteLine("Current Schedule");
                     ConsoleTable.From<ScheduledClassPrintable>(Engine.CurrentSchedule.Select(c => new ScheduledClassPrintable(c))).Write(Format.MarkDown);
                     Console.WriteLine("");
                 }
@@ -143,8 +149,9 @@ namespace OptimizerEngine.Services
                 if (ShowDebugMessages)
                 {
                     Console.WriteLine("Locations");
-                    ConsoleTable.From<Location>(Engine.Locations).Write(Format.MarkDown);
+                    ConsoleTable.From(Engine.Locations).Write(Format.MarkDown);
                     Console.WriteLine("");
+
 
                     Console.WriteLine("Locations' Local Rooms");
                     OptimizerUtilities.PrintRoomTable(Engine.Locations);
@@ -155,59 +162,65 @@ namespace OptimizerEngine.Services
                     Console.WriteLine("");
                 }
 
-                // Map each weekday of the range to an int reperesenting the index within the matrix
-                // Key format => mm/dd/yyyy -> 3
-                Engine.DateIndexMap = new Dictionary<string, int>();
-                int x = 0;
+                // Store all the week days of the range into a list
+                var WeekDaysInRange = new List<string>();
+
                 foreach (DateTime day in OptimizerUtilities.EachWeekDay(Engine.StartDate, Engine.EndDate))
-                    Engine.DateIndexMap[day.ToString(Engine.TIME_FORMAT)] = x++;
-                if (ShowDebugMessages) Console.WriteLine("Count of week days in range: " + Engine.DateIndexMap.Count);
+                {
+                    WeekDaysInRange.Add(day.ToString(TIME_FORMAT));
+                }
+                if (ShowDebugMessages) Console.WriteLine("Count of week days in range: " + WeekDaysInRange.Count());
 
-                // Create an index map for the number of rooms
-                // will map the room id to the index in the matrix
-                Engine.RoomIndexMap = new Dictionary<int, int>();
-                x = 0;
-                context.Room.ToList().ForEach(room => Engine.RoomIndexMap[room.Id] = x++);
-                if (ShowDebugMessages) Console.WriteLine("Room count: " + Engine.RoomIndexMap.Count);
+                // Fill the 2d dictionary IsRoomUnavailable
+                // First pair: value is the room id to a second dictionary
+                // Second pair: string of the date to the unavailability of the room
+                context.Room.ToList().ForEach(room => IsRoomUnavailable.Add(room.Id, WeekDaysInRange.ToDictionary(x => x, x => false)));
 
-                // Create an index map for the number of instructors
-                // will map the instructor username to the index in the matrix
-                Engine.InstructorIndexMap = new Dictionary<string, int>();
-                x = 0;
-                Engine.Instructors.ForEach(instr => Engine.InstructorIndexMap[instr.Username] = x++);
-                if (ShowDebugMessages) Console.WriteLine("Instructor count: " + Engine.InstructorIndexMap.Count);
+                // Fill the 2d dictionary IsInstructorUnavailable
+                // First pair: value is the instructor username to a second dictionary
+                // Second pair: string of the date to the unavailability of the instructor
+                Engine.Instructors.ForEach(instructor => IsInstructorUnavailable.Add(instructor.Username, WeekDaysInRange.ToDictionary(x => x, x=> false)));
 
-                // Create an index map for the location to the matrix
-                Engine.LocationIndexMap = new Dictionary<int, int>();
-                x = 0;
-                Engine.Locations.ForEach(loc => Engine.LocationIndexMap[loc.Id] = x++);
-
-                // Create room unavailability matrix, i.e. true means rooms in unavailable
-                Engine.IsRoomUnavailable = new bool[Engine.RoomIndexMap.Count, Engine.DateIndexMap.Count];
-
-                // Create release count matrix
-                Engine.CurrentlyReleased = new int[Engine.Locations.Count, Engine.DateIndexMap.Count];
+                // Fill the 2d dictionary CurrentlyReleased
+                // First pair: value is the location id to a second dictionary
+                // Second pair: string of the date to the unavailability of the instructor
+                Engine.Locations.ForEach(loc => CurrentlyReleased.Add(loc.Id, WeekDaysInRange.ToDictionary(x => x, x=> 0)));
 
                 // Loop through the current schedule and populate the room availbility and the currently release dictionaries
                 foreach (var clas in Engine.CurrentSchedule)
                 {
                     foreach (var date in OptimizerUtilities.EachWeekDay(OptimizerUtilities.Max(clas.StartDate, Engine.StartDate), OptimizerUtilities.Min(clas.EndDate, Engine.EndDate)))
                     {
-                        Engine.IsRoomUnavailable[Engine.RoomIndexMap[clas.RoomID], Engine.DateIndexMap[date.ToString(Engine.TIME_FORMAT)]] = true;
-                        Engine.CurrentlyReleased[Engine.LocationIndexMap[clas.LocationID], Engine.DateIndexMap[date.ToString(Engine.TIME_FORMAT)]]
-                            += Engine.CourseCatalog.Find(course => course.Id == clas.CourseID).MaxSize;
+                        IsRoomUnavailable[clas.RoomID][date.ToString(TIME_FORMAT)] = true;
+                        CurrentlyReleased[clas.LocationID][date.ToString(TIME_FORMAT)] += Engine.CourseCatalog.Find(course => course.Id == clas.CourseID).MaxSize;
                     }
                 }
                 if (ShowDebugMessages)
                 {
-                    Console.WriteLine("Room Unavailability");
-                    OptimizerUtilities.PrintDate2DArray<bool, int>(Engine.IsRoomUnavailable, Engine.StartDate, Engine.EndDate, Engine.RoomIndexMap.Keys.ToList());
-                    Console.WriteLine("Current Released");
-                    OptimizerUtilities.PrintDate2DArray<int, int>(Engine.CurrentlyReleased, Engine.StartDate, Engine.EndDate, Engine.LocationIndexMap.Keys.ToList());
-                }
+                    Console.WriteLine("IsRoomUnavailable");
+                    var Headers = new List<string> { "RoomID" };
+                    WeekDaysInRange.ForEach(day => Headers.Add(day.Substring(0, day.Length - 5)));
+                    var table = new ConsoleTable(Headers.ToArray());
+                    foreach (var RoomPair in IsRoomUnavailable)
+                    {
+                        var row = new List<string> { RoomPair.Key.ToString() };
+                        RoomPair.Value.ToList().ForEach(pair => row.Add(pair.Value.ToString()));
+                        table.AddRow(row.ToArray());
+                    }
+                    table.Write(Format.MarkDown);
 
-                // Create instructor availability dictionary
-                Engine.IsInstructorUnavailable = new bool[Engine.InstructorIndexMap.Count, Engine.DateIndexMap.Count];
+                    Console.WriteLine("CurrentlyReleased");
+                    Headers = new List<string> { "LocationID" };
+                    WeekDaysInRange.ForEach(day => Headers.Add(day.Substring(0, day.Length - 5)));
+                    table = new ConsoleTable(Headers.ToArray());
+                    foreach (var LocPair in CurrentlyReleased)
+                    {
+                        var row = new List<string> { LocPair.Key.ToString() };
+                        LocPair.Value.ToList().ForEach(pair => row.Add(pair.Value.ToString()));
+                        table.AddRow(row.ToArray());
+                    }
+                    table.Write(Format.MarkDown);
+                }
 
                 // Populate the unavailability area with the instructor assignments
                 foreach (var assignment in Engine.InstructorAssignments)
@@ -215,7 +228,7 @@ namespace OptimizerEngine.Services
                     // Mark each day of the relevant days of the assignment to the optimization range to true (unavailable)
                     foreach (var date in OptimizerUtilities.EachWeekDay(OptimizerUtilities.Max(assignment.StartDate, Engine.StartDate), OptimizerUtilities.Min(assignment.EndDate, Engine.EndDate)))
                     {
-                        Engine.IsInstructorUnavailable[Engine.InstructorIndexMap[assignment.UserId], Engine.DateIndexMap[date.ToString(Engine.TIME_FORMAT)]] = true;
+                        IsInstructorUnavailable[assignment.UserId][date.ToString(TIME_FORMAT)] = true;
                     }
                     // Account for travel time by marking the day before and after for non local assignments unavailable for that instructor
                     // Only if the day is adjacent to the assignment (i.e. not the friday before a monday of an assignment)
@@ -225,15 +238,15 @@ namespace OptimizerEngine.Services
                         // If its not, it is either an adjacent week day but outside the range of the optimizer
                         // Or it is a weekend (the day before monday is sunday, will not be mapped in the dictionary
                         var DayBeforeAssignment = OptimizerUtilities.Max(assignment.StartDate, Engine.StartDate).AddDays(-1).ToString(Engine.TIME_FORMAT);
-                        if (Engine.DateIndexMap.ContainsKey(DayBeforeAssignment))
+                        if (WeekDaysInRange.Contains(DayBeforeAssignment))
                         {
-                            Engine.IsInstructorUnavailable[Engine.InstructorIndexMap[assignment.UserId], Engine.DateIndexMap[DayBeforeAssignment]] = true;
+                            IsInstructorUnavailable[assignment.UserId][DayBeforeAssignment] = true;
                         }
                         // Do same but for the day after
                         var DayAfterAssignment = OptimizerUtilities.Min(assignment.EndDate, Engine.EndDate).ToString(Engine.TIME_FORMAT);
-                        if (Engine.DateIndexMap.ContainsKey(DayAfterAssignment))
+                        if (WeekDaysInRange.Contains(DayAfterAssignment))
                         {
-                            Engine.IsInstructorUnavailable[Engine.InstructorIndexMap[assignment.UserId], Engine.DateIndexMap[DayAfterAssignment]] = true;
+                            IsInstructorUnavailable[assignment.UserId][DayAfterAssignment] = true;
                         }
                     }
                 }
@@ -243,16 +256,26 @@ namespace OptimizerEngine.Services
                 {
                     foreach (var date in OptimizerUtilities.EachWeekDay(OptimizerUtilities.Max(exception.StartDate, Engine.StartDate), OptimizerUtilities.Min(exception.EndDate, Engine.EndDate)))
                     {
-                        if (Engine.InstructorIndexMap.ContainsKey(exception.RequestForId))
+                        if (WeekDaysInRange.Contains(exception.RequestForId))
                         {
-                            Engine.IsInstructorUnavailable[Engine.InstructorIndexMap[exception.RequestForId], Engine.DateIndexMap[date.ToString(Engine.TIME_FORMAT)]] = true;
+                            //Engine.IsInstructorUnavailable[Engine.InstructorIndexMap[exception.RequestForId], Engine.DateIndexMap[date.ToString(Engine.TIME_FORMAT)]] = true;
+                            IsInstructorUnavailable[exception.RequestForId][date.ToString(TIME_FORMAT)] = true;
                         }
                     }
                 }
                 if (ShowDebugMessages)
                 {
-                    Console.WriteLine("Instructor Unavilability");
-                    OptimizerUtilities.PrintDate2DArray<bool, string>(Engine.IsInstructorUnavailable, Engine.StartDate, Engine.EndDate, Engine.InstructorIndexMap.Keys.ToList());
+                    Console.WriteLine("IsInstructorUnavailable");
+                    var Headers = new List<string> { "Username" };
+                    WeekDaysInRange.ForEach(day => Headers.Add(day.Substring(0, day.Length - 5)));
+                    var table = new ConsoleTable(Headers.ToArray());
+                    foreach (var InstructorPair in IsInstructorUnavailable)
+                    {
+                        var row = new List<string> { InstructorPair.Key.ToString() };
+                        InstructorPair.Value.ToList().ForEach(pair => row.Add(pair.Value.ToString()));
+                        table.AddRow(row.ToArray());
+                    }
+                    table.Write(Format.MarkDown);
                 }
             }
             if (ShowDebugMessages) Console.WriteLine("Data loading complete.\n");

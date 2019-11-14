@@ -11,10 +11,10 @@ namespace OptimizerEngine
         public int ID { get; set; }
 
         //Course ID
-        public int CourseID { get; set; }
+        public string CourseCode { get; set; }
 
         //Location ID of course
-        public int LocationID { get; set; }
+        public string LocationCode { get; set; }
 
         //Room ID of course
         public int RoomID { get; set; }
@@ -32,12 +32,13 @@ namespace OptimizerEngine
         public DateTime EndDate { get; set; }
 
         public string Instructor { get; set; }
+        
 
         public OptimizerResultPrintable(OptimizerResult result)
         {
             ID = result.ID;
-            CourseID = result.CourseID;
-            LocationID = result.LocationID;
+            CourseCode = result.CourseCode;
+            LocationCode = result.Location;
             RoomID = result.RoomID;
             StartTime = result.StartTime;
             EndTime = result.EndTime;

@@ -1,4 +1,5 @@
-﻿using OptimizerEngine.Services;
+﻿using OptimizerEngine.Models;
+using OptimizerEngine.Services;
 using System;
 using System.IO;
 
@@ -9,11 +10,11 @@ namespace OptimizerEngine
         static void Main(string[] args)
         {
             bool askForInput = false;
-            bool showSetup = true;
-            var builder = new Services.OptimizerEngineBuilder(showSetup);
+            bool debug = true;
+            var builder = new Services.OptimizerEngineBuilder(debug);
 
-            DateTime StartDate = Convert.ToDateTime("11/4/2019");
-            DateTime EndDate = Convert.ToDateTime("11/15/2019");
+            DateTime StartDate = Convert.ToDateTime("9/1/2019");
+            DateTime EndDate = Convert.ToDateTime("12/31/2019");
 
             if (askForInput)
             {
@@ -26,9 +27,22 @@ namespace OptimizerEngine
 
             Console.WriteLine($"The Optimizer range is set from {StartDate} to {EndDate}");
 
+            var watch = new System.Diagnostics.Stopwatch();
+            if (debug) watch = System.Diagnostics.Stopwatch.StartNew();
+
             var engine = builder.Build(StartDate, EndDate);
 
-            engine.OptimizeGreedy();
+            //engine.OptimizeGreedy(builder.IsRoomUnavailable, builder.IsInstructorUnavailable, builder.CurrentlyReleased);
+            var answer = engine.OptimizeRecursion(ref engine.Inputs, new OptimizerScheduleResults(), builder.IsInstructorUnavailable, builder.IsRoomUnavailable, builder.CurrentlyReleased, 0);
+            if (debug) Console.WriteLine("Optimization Complete.\n");
+
+            if (debug)
+            {
+                watch.Stop();
+                answer.Print();
+                Console.WriteLine($"Time in milliseconds: {watch.ElapsedMilliseconds}");
+                
+            }
 
         }
     }
