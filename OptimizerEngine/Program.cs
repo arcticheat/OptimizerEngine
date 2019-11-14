@@ -13,8 +13,8 @@ namespace OptimizerEngine
             bool debug = true;
             var builder = new Services.OptimizerEngineBuilder(debug);
 
-            DateTime StartDate = Convert.ToDateTime("9/1/2019");
-            DateTime EndDate = Convert.ToDateTime("12/31/2019");
+            DateTime StartDate = Convert.ToDateTime("1/1/2020");
+            DateTime EndDate = Convert.ToDateTime("3/31/2020");
 
             if (askForInput)
             {

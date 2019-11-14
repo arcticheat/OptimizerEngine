@@ -210,12 +210,14 @@ namespace OptimizerEngine.Services
             Dictionary<string, Dictionary<string, bool>> IsInstructorUnavailable, Dictionary<int, Dictionary<string, bool>> IsRoomUnavailable,
             Dictionary<int, Dictionary<string, int>> CurrentlyReleased, int depth)
         {
+            // Copy the schedule results that are being built for this node
             var myResults = new OptimizerScheduleResults(optimizerScheduleResults);
+
             Console.WriteLine($"Current depth: {depth}");
             // base case if there are no more inputs
             if (inputs.Count <= 0)
             {
-                Console.WriteLine("This node is completed...returning");
+                Console.WriteLine($"Possible schedule found with {myResults.Results.Count} out of {InputCount} scheduled.");
                 // calculate score
                 return myResults;
             }
@@ -225,9 +227,12 @@ namespace OptimizerEngine.Services
                 // pop the first result from the inputs
                 var CurrentInput = inputs[0];
                 inputs.RemoveAt(0);
-                Console.WriteLine($"Node is considering the input with ID {CurrentInput.Id}");
+                //Console.WriteLine($"Node is considering the input with ID {CurrentInput.Id}");
 
                 var PossibleSchedulingsForInput = new List<OptimizerResult>();
+
+                // flags to determine possible reason for failure
+                bool NoInstructor = true, NoRoom = true;
 
                 //if (ShowDebugMessages) Console.WriteLine($"Calculating result for input ID {CurrentInput.Id}... ");
 
@@ -242,12 +247,9 @@ namespace OptimizerEngine.Services
                 var ValidStartDates = FindValidStartDates(CurrentInput.LocationIdLiteral, CurrentInput.LengthDays, MaxClassSize, ReleaseRate, CurrentlyReleased);
                 if (ValidStartDates.Count <= 0)
                 {
-                    if (ShowDebugMessages) Console.WriteLine($"The input could not be scheduled because the location {CurrentInput.LocationId} would exceed its release rate.");
+                    //if (ShowDebugMessages) Console.WriteLine($"The input could not be scheduled because the location {CurrentInput.LocationId} would exceed its release rate.");
                     CurrentInput.Reason = "Release rate would be exceeded.";
                 }
-
-                // Counter to keep track of inputs that need multiple iterations scheduled 
-                var currentIterationForThisInput = 0;
 
                 // Loop through each day within the optimizer range that the course could start on
                 var lastDate = ValidStartDates.LastOrDefault();
@@ -264,6 +266,7 @@ namespace OptimizerEngine.Services
                         // Determine if this instructor is available for the range
                         if (IsInstructorAvailableForDateRange(Instructor, ValidStartDate, ValidEndDate, IsInstructorUnavailable))
                         {
+                            NoInstructor = false;
                             //if (ShowDebugMessages) Console.WriteLine($"The instructor {Instructor} is available.");
 
                             // Loop through all local rooms for this location
@@ -275,6 +278,7 @@ namespace OptimizerEngine.Services
                                 // Determine if this room is available 
                                 if (IsRoomAvailbleForDateRange(RoomID, ValidStartDate, ValidEndDate, IsRoomUnavailable))
                                 {
+                                    NoRoom = false;
                                     //if (ShowDebugMessages) Console.WriteLine($"The Room {RoomID} is available.");
 
                                     // Found an answer so set the remaining fields for the result
@@ -316,8 +320,15 @@ namespace OptimizerEngine.Services
                 if (PossibleSchedulingsForInput.Count <= 0)
                 {
                     // skip input and consider the next
+                    if (NoInstructor & !NoRoom)
+                        CurrentInput.Reason = "No instructor is available";
+                    else if (!NoInstructor & NoRoom)
+                        CurrentInput.Reason = "No room is available";
+                    else
+                        CurrentInput.Reason = "Error";
+
                     optimizerScheduleResults.FailedToSchedule.Add(CurrentInput);
-                    Console.WriteLine("This node has failed to schedule anything...continuing to the next node.\n");
+                    //Console.WriteLine("This node has failed to schedule anything...continuing to the next node.\n");
                     return OptimizeRecursion(ref inputs, optimizerScheduleResults, IsInstructorUnavailable, IsRoomUnavailable, CurrentlyReleased, ++depth);
                 }
                 // At least one continuation is possible from this node
@@ -330,7 +341,7 @@ namespace OptimizerEngine.Services
                     //    var combinations = BuildCombinations(ref PossibleSchedulingsForInput, new List<OptimizerResult>(), 0, CurrentInput.NumTimesToRun);
                     //}
                     var copy = optimizerScheduleResults;
-                    foreach(var Result in PossibleSchedulingsForInput)
+                    foreach (var Result in PossibleSchedulingsForInput)
                     {
                         // Copy all the unavailability data trackers to update them for this recursion
                         var CRCopy = CurrentlyReleased;
@@ -344,7 +355,7 @@ namespace OptimizerEngine.Services
                         myResults.Results.Add(Result);
 
                         // Recursion!
-                        Console.WriteLine("Recursion...");
+                        //Console.WriteLine("Recursion...");
                         SubNodeAnswers.Add(OptimizeRecursion(ref inputs, myResults, IIUCopy, IRUCopy, CRCopy, ++depth));
 
                         // Remove this result for other answers
