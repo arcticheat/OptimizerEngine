@@ -1,5 +1,5 @@
 ﻿using ConsoleTables;
-using OptimizerEngine.Models;
+using LSS.Models;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -7,7 +7,7 @@ using Microsoft.EntityFrameworkCore;
 using System.Text;
 using MoreLinq;
 
-namespace OptimizerEngine.Services
+namespace LSS.Services
 {
     public class OptimizerEngine
     {
@@ -29,13 +29,14 @@ namespace OptimizerEngine.Services
         private int NonEndNodesThatReturned = -1;
         public int TotalWeekDays;
         public int[] NodesPerDepth;
+        private int RepeatIndexCount = 0;
 
         /// <summary>
         /// The optimizer will calculate a single collection of optimizer results created from the optimizer input
         /// The results are created by ensuring the schedule is legal as well as assigning the resources on a first available focus
         /// </summary>
         public void OptimizeGreedy(Dictionary<int, Dictionary<string, bool>> IsRoomUnavailable, Dictionary<string, Dictionary<string, bool>> IsInstructorUnavailable,
-            Dictionary<int, Dictionary<string, int>> CurrentlyReleased)
+            Dictionary<int, Dictionary<string, int>> CurrentlyReleased, Dictionary<int, Dictionary<string, List<int>>> LocallyTaughtCoursesPerDay)
         {
             if (ShowDebugMessages) Console.WriteLine("Optimizing...\n");
             // Container for the results
@@ -47,17 +48,18 @@ namespace OptimizerEngine.Services
                 if (ShowDebugMessages) Console.WriteLine($"Calculating result for input ID {CurrentInput.Id}... ");
 
                 // Obtain the class max size and the location release rate for the function call to find the valid start dates
-                var MaxClassSize = CourseCatalog.Where(course => course.Id == CurrentInput.CourseId).First().MaxSize;
-                var ReleaseRate = Locations.Where(location => location.Id == CurrentInput.LocationIdLiteral).First().ReleaseRate;
+                var MaxClassSize = CourseCatalog.Where(course => course.ID == CurrentInput.CourseId).First().MaxSize;
+                var ReleaseRate = Locations.Where(location => location.ID == CurrentInput.LocationIdLiteral).First().ReleaseRate;
 
                 // Obtain the information about this course in the catalog
-                var CourseInfo = CourseCatalog.Where(course => course.Id == CurrentInput.CourseId).First();
+                var CourseInfo = CourseCatalog.Where(course => course.ID == CurrentInput.CourseId).First();
 
                 // Obtain all possible start dates (restricted by location release rate and course length)
-                var ValidStartDates = FindValidStartDates(CurrentInput.LocationIdLiteral, CurrentInput.LengthDays, MaxClassSize, ReleaseRate, CurrentlyReleased);
+                var ValidStartDates = FindValidStartDates(CurrentInput.LocationIdLiteral, CurrentInput.LengthDays, MaxClassSize, ReleaseRate,
+                    (int)CourseInfo.ID, ref CurrentlyReleased, ref LocallyTaughtCoursesPerDay);
                 if (ValidStartDates.Count <= 0)
                 {
-                    if (ShowDebugMessages) Console.WriteLine($"The input could not be scheduled because the location {CurrentInput.LocationId} would exceed its release rate.\n");
+                    if (ShowDebugMessages) Console.WriteLine($"The input could not be scheduled because the location {CurrentInput.LocationID} would exceed its release rate.\n");
                     CurrentInput.Reason = "Release rate would be exceeded.";
                 }
 
@@ -89,7 +91,7 @@ namespace OptimizerEngine.Services
                             if (ShowDebugMessages) Console.WriteLine($"The instructor {Instructor} is available.");
                             Result.InstrUsername = Instructor;
                             // Set the result status to using a local instructor
-                            Result.UsingLocalInstructor = Instructors.Where(instr => instr.Username == Instructor).First().PointId == CurrentInput.LocationIdLiteral;
+                            Result.UsingLocalInstructor = Instructors.Where(instr => instr.Username == Instructor).First().PointID == CurrentInput.LocationIdLiteral;
                             break;
                         }
                     }
@@ -106,9 +108,9 @@ namespace OptimizerEngine.Services
                     }
                     // Loop through all local rooms for this location
                     // but only the rooms that have the right type and quantity of resources required by this course type
-                    foreach (var RoomID in Locations.Where(Loc => Loc.Code == CurrentInput.LocationId).First().
+                    foreach (var RoomID in Locations.Where(Loc => Loc.Code == CurrentInput.LocationID).First().
                         LocalRooms.Where(room => CourseInfo.RequiredResources.All(required =>
-                        Rooms[room].Resources.ContainsKey(required.Key) && Rooms[room].Resources[required.Key] >= required.Value )))
+                        Rooms[room].Resources_dict.ContainsKey(required.Key) && Rooms[room].Resources_dict[required.Key] >= required.Value )))
                     {
                         // Determine if this room is available 
                         if (IsRoomAvailbleForDateRange(RoomID, ValidStartDate, ValidEndDate, IsRoomUnavailable))
@@ -132,11 +134,11 @@ namespace OptimizerEngine.Services
                     }
                     // If successful, update the matrices 
                     UpdateMatrices(ValidStartDate, ValidEndDate, CurrentInput.LocationIdLiteral, MaxClassSize, Result.InstrUsername, Result.RoomID, Result.UsingLocalInstructor,
-                        ref CurrentlyReleased, ref IsInstructorUnavailable, ref IsRoomUnavailable);
+                        (int)CourseInfo.ID, ref CurrentlyReleased, ref IsInstructorUnavailable, ref IsRoomUnavailable, ref LocallyTaughtCoursesPerDay);
 
                     // Found an answer so set the remaining fields for the result
                     Result.CourseID = CurrentInput.CourseId;
-                    Result.LocationID = Locations.Where(Loc => Loc.Code == CurrentInput.LocationId).First().Id;
+                    Result.LocationID = Locations.Where(Loc => Loc.Code == CurrentInput.LocationID).First().ID;
                     Result.Cancelled = false;
                     Result.StartTime = ValidStartDate - ValidStartDate;
                     Result.EndTime = ValidStartDate - ValidStartDate;
@@ -146,7 +148,7 @@ namespace OptimizerEngine.Services
                     Result.Requester = "Optimizer";
                     Result.Hidden = true;
                     Result.AttendanceLocked = false;
-                    Result.Location = CurrentInput.LocationId;
+                    Result.Location = CurrentInput.LocationID;
                     Result.CourseCode = CurrentInput.CourseCode;
 
                     if (ShowDebugMessages)
@@ -214,8 +216,16 @@ namespace OptimizerEngine.Services
 
         internal OptimizerScheduleResults OptimizeRecursion(OptimizerScheduleResults IncomingResults, int InputIndex,
             Dictionary<string, Dictionary<string, bool>> IsInstructorUnavailable, Dictionary<int, Dictionary<string, bool>> IsRoomUnavailable,
-            Dictionary<int, Dictionary<string, int>> CurrentlyReleased)
+            Dictionary<int, Dictionary<string, int>> CurrentlyReleased,
+            Dictionary<int, Dictionary<string, List<int>>> LocallyTaughtCoursesPerDay,
+            int CurrentDepth)
         {
+            // Always check if the best answer is already found
+            if (IsABestAnswerFound())
+            {
+                return CurrentBestAnswer;
+            }
+
             // base case if there are no more inputs
             if (InputIndex >= InputCount)
             {
@@ -231,10 +241,9 @@ namespace OptimizerEngine.Services
                 // Predict if a better answer is even possible from here
                 // First see if adding every single remaining class for the remainder of this branch would 
                 // create a result with more successful resutls than the best
-                if (InputCount - InputIndex + IncomingResults.Results.Count <= CurrentBestAnswer.Results.Count)
+                if (NodesPerDepth.Length - CurrentDepth + IncomingResults.Results.Count <= CurrentBestAnswer.Results.Count)
                 {
                     // This branch cannot possibly come up with a better answer than what is already found
-                    Console.WriteLine("Bounding!");
                     return CurrentBestAnswer;
                 }
 
@@ -248,21 +257,25 @@ namespace OptimizerEngine.Services
                 bool NoInstructor = true, NoRoom = true, ExceededReleaseRate = true;
 
                 // Obtain the class max size and the location release rate for the function call to find the valid start dates
-                var MaxClassSize = CourseCatalog.Where(course => course.Id == CurrentInput.CourseId).First().MaxSize;
-                var ReleaseRate = Locations.Where(location => location.Id == CurrentInput.LocationIdLiteral).First().ReleaseRate;
+                var MaxClassSize = CourseCatalog.Where(course => course.ID == CurrentInput.CourseId).First().MaxSize;
+                var ReleaseRate = Locations.Where(location => location.ID == CurrentInput.LocationIdLiteral).First().ReleaseRate;
 
                 // Obtain the information about this course in the catalog
-                var CourseInfo = CourseCatalog.Where(course => course.Id == CurrentInput.CourseId).First();
+                var CourseInfo = CourseCatalog.Where(course => course.ID == CurrentInput.CourseId).First();
 
                 // Obtain all possible start dates (restricted by location release rate and course length)
-                var ValidStartDates = FindValidStartDates(CurrentInput.LocationIdLiteral, CurrentInput.LengthDays, MaxClassSize, ReleaseRate, CurrentlyReleased);
-                    
+                var ValidStartDates = FindValidStartDates(CurrentInput.LocationIdLiteral, CurrentInput.LengthDays, MaxClassSize, ReleaseRate,
+                    (int)CourseInfo.ID, ref CurrentlyReleased, ref LocallyTaughtCoursesPerDay);
+
+                // Container to hold every child node's answer
+                var SubNodeAnswers = new List<OptimizerScheduleResults>();
 
                 // Loop through each day within the optimizer range that the course could start on
                 var lastDate = ValidStartDates.LastOrDefault();
 
                 foreach (var ValidStartDate in ValidStartDates)
                 {
+
                     ExceededReleaseRate = false;
                     // Set the end date for this range based off of the course length
                     var ValidEndDate = ValidStartDate.AddDays(CurrentInput.LengthDays - 1);
@@ -277,9 +290,9 @@ namespace OptimizerEngine.Services
 
                             // Loop through all local rooms for this location
                             // but only the rooms that have the right type and quantity of resources required by this course type
-                            foreach (var RoomID in Locations.Where(Loc => Loc.Code == CurrentInput.LocationId).First().
+                            foreach (var RoomID in Locations.Where(Loc => Loc.Code == CurrentInput.LocationID).First().
                                 LocalRooms.Where(room => CourseInfo.RequiredResources.All(required =>
-                                Rooms[room].Resources.ContainsKey(required.Key) && Rooms[room].Resources[required.Key] >= required.Value)))
+                                Rooms[room].Resources_dict.ContainsKey(required.Key) && Rooms[room].Resources_dict[required.Key] >= required.Value)))
                             {
                                 // Determine if this room is available 
                                 if (IsRoomAvailbleForDateRange(RoomID, ValidStartDate, ValidEndDate, IsRoomUnavailable))
@@ -291,7 +304,7 @@ namespace OptimizerEngine.Services
                                     var Result = new OptimizerResult
                                     {
                                         CourseID = CurrentInput.CourseId,
-                                        LocationID = Locations.Where(Loc => Loc.Code == CurrentInput.LocationId).First().Id,
+                                        LocationID = Locations.Where(Loc => Loc.Code == CurrentInput.LocationID).First().ID,
                                         Cancelled = false,
                                         StartTime = ValidStartDate - ValidStartDate,
                                         EndTime = ValidStartDate - ValidStartDate,
@@ -301,92 +314,54 @@ namespace OptimizerEngine.Services
                                         Requester = "Optimizer",
                                         Hidden = true,
                                         AttendanceLocked = false,
-                                        Location = CurrentInput.LocationId,
+                                        Location = CurrentInput.LocationID,
                                         CourseCode = CurrentInput.CourseCode,
                                         RoomID = RoomID,
                                         InstrUsername = Instructor,
-                                        UsingLocalInstructor = Instructors.Where(instr => instr.Username == Instructor).First().PointId == CurrentInput.LocationIdLiteral
+                                        UsingLocalInstructor = Instructors.Where(instr => instr.Username == Instructor).First().PointID == CurrentInput.LocationIdLiteral
                                     };
 
-                                    // Add this result to all the possible results from this node
-                                    PossibleSchedulingsForInput.Add(Result);
+                                    // Deep copy the current results so this child node will have a unique result object to build from
+                                    var MyResults = OptimizerUtilities.DeepClone(IncomingResults);
+
+                                    // Copy all the unavailability data trackers to update them for this recursion
+                                    var CRCopy = OptimizerUtilities.DeepClone(CurrentlyReleased);
+                                    var IIUCopy = OptimizerUtilities.DeepClone(IsInstructorUnavailable);
+                                    var IRUCopy = OptimizerUtilities.DeepClone(IsRoomUnavailable);
+                                    var LTCPDCopy = OptimizerUtilities.DeepClone(LocallyTaughtCoursesPerDay);
+
+                                    NodesPerDepth[CurrentDepth] += 1;
+
+                                    //update the data container copies with the scheduling info for this result
+                                    UpdateMatrices(Result.StartDate, Result.EndDate, CurrentInput.LocationIdLiteral, MaxClassSize, Result.InstrUsername, Result.RoomID, Result.UsingLocalInstructor,
+                                        (int)CourseInfo.ID, ref CRCopy, ref IIUCopy, ref IRUCopy, ref LTCPDCopy);
+
+                                    // Add the result
+                                    MyResults.Results.Add(Result);
+                                    MyResults.Inputs[InputIndex].RemainingRuns -= 1;
+
+                                    // Add the child's answer 
+                                    // repeat this index if there are more times to run
+                                    if (MyResults.Inputs[InputIndex].RemainingRuns > 0)
+                                    {
+                                        SubNodeAnswers.Add(OptimizeRecursion(MyResults, InputIndex, IIUCopy, IRUCopy, CRCopy, LTCPDCopy, CurrentDepth + 1));
+                                    }
+                                    else
+                                    {
+                                        MyResults.Inputs[InputIndex].Succeeded = true;
+                                        SubNodeAnswers.Add(OptimizeRecursion(MyResults, InputIndex + 1, IIUCopy, IRUCopy, CRCopy, LTCPDCopy, CurrentDepth + 1));
+                                    }
+                                    // Always check if the best answer is already found
+                                    if (IsABestAnswerFound())
+                                    {
+                                        return CurrentBestAnswer;
+                                    }
                                 }
                             }
                         }
                     }
                 }
-                // Container to hold every child node's answer
-                var SubNodeAnswers = new List<OptimizerScheduleResults>();
-
-                // If this course should be scheduled multiple times, obtain all combinations of this class with itself scheduled at different times
-                var MaxComboSize = Math.Min(CurrentInput.NumTimesToRun, ValidStartDates.Count);
-                var combos = BuildCombinations(PossibleSchedulingsForInput, new List<OptimizerResult>(), MaxComboSize, -1);
-
-                NodesPerDepth[InputIndex] += combos.Count + 1;
-
-                // branch for each combo 
-                foreach (var combo in combos)
-                {
-                    // Deep copy the current results so this child node will have a unique result object to build from
-                    var MyResults = OptimizerUtilities.DeepClone(IncomingResults);
-
-                    // Copy all the unavailability data trackers to update them for this recursion
-                    var CRCopy = new Dictionary<int, Dictionary<string, int>>();
-                    foreach (var outerPair in CurrentlyReleased)
-                    {
-                        CRCopy[outerPair.Key] = new Dictionary<string, int>();
-                        foreach (var innerPair in outerPair.Value)
-                        {
-                            CRCopy[outerPair.Key][innerPair.Key] = innerPair.Value;
-                        }
-                    }
-                    var IIUCopy = new Dictionary<string, Dictionary<string, bool>>();
-                    foreach (var outerPair in IsInstructorUnavailable)
-                    {
-                        IIUCopy[outerPair.Key] = new Dictionary<string, bool>();
-                        foreach (var innerPair in outerPair.Value)
-                        {
-                            IIUCopy[outerPair.Key][innerPair.Key] = innerPair.Value;
-                        }
-                    }
-                    var IRUCopy = new Dictionary<int, Dictionary<string, bool>>();
-                    foreach (var outerPair in IsRoomUnavailable)
-                    {
-                        IRUCopy[outerPair.Key] = new Dictionary<string, bool>();
-                        foreach (var innerPair in outerPair.Value)
-                        {
-                            IRUCopy[outerPair.Key][innerPair.Key] = innerPair.Value;
-                        }
-                    }
-
-                    // update the availability markers for each result of the combo and add it to the results
-                    foreach (var Result in combo)
-                    {
-                        // Always check if the best answer is already found
-                        if (IsABestAnswerFound())
-                        {
-                            return CurrentBestAnswer;
-                        }
-                        //update the data container copies with the scheduling info for this result
-                        UpdateMatrices(Result.StartDate, Result.EndDate, CurrentInput.LocationIdLiteral, MaxClassSize, Result.InstrUsername, Result.RoomID, Result.UsingLocalInstructor,
-                            ref CRCopy, ref IIUCopy, ref IRUCopy);
-
-                        // Add the result
-                        MyResults.Results.Add(Result);
-                    }
-                    // Set that the input has succeeded
-                    if (combo.Count < CurrentInput.NumTimesToRun)
-                    {
-                        MyResults.Inputs[InputIndex].Succeeded = false;
-                        MyResults.Inputs[InputIndex].Reason = $"Could only schedule {combo.Count} out of {CurrentInput.NumTimesToRun}.";
-                    }
-                    else
-                        MyResults.Inputs[InputIndex].Succeeded = true;
-                    // Add the child's answer 
-                    var SubNodeAnswer = new OptimizerScheduleResults(OptimizeRecursion(MyResults, InputIndex + 1, IIUCopy, IRUCopy, CRCopy));
-                    SubNodeAnswers.Add(SubNodeAnswer);
-                }
-
+                    
                 // Must always consider what would happen if this input is not scheduled
                 var ResultsNotScheduled = OptimizerUtilities.DeepClone(IncomingResults);
                 ResultsNotScheduled.Inputs[InputIndex].Succeeded = false;
@@ -395,45 +370,30 @@ namespace OptimizerEngine.Services
                 //If there is a reason to skip, set it
                 if (ExceededReleaseRate)
                     ResultsNotScheduled.Inputs[InputIndex].Reason = "No valid start date";
-                if (NoInstructor)
+                else if (NoInstructor)
                     ResultsNotScheduled.Inputs[InputIndex].Reason = "No instructor is available";
                 else if (NoRoom)
                     ResultsNotScheduled.Inputs[InputIndex].Reason = "No room is available";
+                else if (CurrentInput.RemainingRuns > 0)
+                    ResultsNotScheduled.Inputs[InputIndex].Reason = $"Only scheduled {CurrentInput.NumTimesToRun - CurrentInput.RemainingRuns}" +
+                        $" out of {CurrentInput.NumTimesToRun}";
                 else
                     ResultsNotScheduled.Inputs[InputIndex].Reason = "Skipped";
 
                 // Copy all the unavailability data trackers to update them for this recursion
-                var CRCopy_skip = new Dictionary<int, Dictionary<string, int>>();
-                foreach (var outerPair in CurrentlyReleased)
-                {
-                    CRCopy_skip[outerPair.Key] = new Dictionary<string, int>();
-                    foreach (var innerPair in outerPair.Value)
-                    {
-                        CRCopy_skip[outerPair.Key][innerPair.Key] = innerPair.Value;
-                    }
-                }
-                var IIUCopy_skip = new Dictionary<string, Dictionary<string, bool>>();
-                foreach (var outerPair in IsInstructorUnavailable)
-                {
-                    IIUCopy_skip[outerPair.Key] = new Dictionary<string, bool>();
-                    foreach (var innerPair in outerPair.Value)
-                    {
-                        IIUCopy_skip[outerPair.Key][innerPair.Key] = innerPair.Value;
-                    }
-                }
-                var IRUCopy_skip = new Dictionary<int, Dictionary<string, bool>>();
-                foreach (var outerPair in IsRoomUnavailable)
-                {
-                    IRUCopy_skip[outerPair.Key] = new Dictionary<string, bool>();
-                    foreach (var innerPair in outerPair.Value)
-                    {
-                        IRUCopy_skip[outerPair.Key][innerPair.Key] = innerPair.Value;
-                    }
-                }
+                var CRCopy_skip = OptimizerUtilities.DeepClone(CurrentlyReleased);
+                var IIUCopy_skip = OptimizerUtilities.DeepClone(IsInstructorUnavailable);
+                var IRUCopy_skip = OptimizerUtilities.DeepClone(IsRoomUnavailable);
+                var LTCPDCopy_skip = OptimizerUtilities.DeepClone(LocallyTaughtCoursesPerDay);
 
                 // Recursion on skipping this input
-                var AnswerWithoutThisInput = OptimizeRecursion(ResultsNotScheduled, InputIndex + 1, IIUCopy_skip, IRUCopy_skip, CRCopy_skip);
-                SubNodeAnswers.Add(AnswerWithoutThisInput);
+                SubNodeAnswers.Add(OptimizeRecursion(ResultsNotScheduled, InputIndex + 1, IIUCopy_skip, IRUCopy_skip, CRCopy_skip, LTCPDCopy_skip, CurrentDepth + 1));
+
+                // Always check if the best answer is already found
+                if (IsABestAnswerFound())
+                {
+                    return CurrentBestAnswer;
+                }
 
                 // Pick best answer
                 var bestAnswer = SelectBestAnswer(SubNodeAnswers);
@@ -460,7 +420,11 @@ namespace OptimizerEngine.Services
             status += "Level 0: Node Count 1\n";
             for (int i = 0; i < NodesPerDepth.Length; i++)
             {
-                status += $"Level {i + 1}: Node Count {NodesPerDepth[i]}\n";
+                //if (NodesPerDepth[i] == 0)
+                    //status += $"Level {i + 1}: Node Count ?\n";
+                //else
+                if (NodesPerDepth[i] != 0)
+                    status += $"Level {i + 1}: Node Count {NodesPerDepth[i]}\n";
             }
             status += "--------------------------------------|";
             return status;
@@ -468,7 +432,7 @@ namespace OptimizerEngine.Services
 
         public bool IsABestAnswerFound()
         {
-            return CurrentBestAnswer.OptimizationScore == InputCount;
+            return CurrentBestAnswer.OptimizationScore == NodesPerDepth.Length;
         }
 
         /// <summary>
@@ -534,12 +498,14 @@ namespace OptimizerEngine.Services
         }
 
         /// <summary>
-        /// Determines the possible days a course could start on based on the release rate of its location
+        /// Determines the possible days a course could start on based on the release rate of its location and concurrent courses
         /// </summary>
         /// <param name="locationId">The location the class is to be scheduled at</param>
         /// <param name="courseId">The id of the course type being scheduled</param>
         /// <returns>A collection of valid start days for this class</returns>
-        private List<DateTime> FindValidStartDates(int locationId, int classLengthDays, int classMaxSize, int? releaseRate, Dictionary<int, Dictionary<string, int>> CurrentlyReleased)
+        private List<DateTime> FindValidStartDates(int locationId, int classLengthDays, int classMaxSize, int? releaseRate,
+            int courseId, ref Dictionary<int, Dictionary<string, int>> CurrentlyReleased, 
+            ref Dictionary<int, Dictionary<string, List<int>>> LocallyTaughtCoursesPerDay)
         {
             // Check if releaseRate was nullable from the table
             if (!releaseRate.HasValue)
@@ -578,12 +544,14 @@ namespace OptimizerEngine.Services
                         break;
                     }
 
-                    // If a course with the same code is being taught, then do not include
+                    // If a course with the same code is being taught at this location, then do not include it
                     // This is to avoid having two of the same course at the same time
-                    //if ()
-                    //{
-
-                    //}
+                    if (LocallyTaughtCoursesPerDay[locationId][CurrentDay.ToString(TIME_FORMAT)].Contains(courseId))
+                    {
+                        DaysToSkip = (int)(CurrentDay - FirstDay).TotalDays;
+                        ReleaseRateSatisfied = false;
+                        break;
+                    }
                 }
                 // Add this day to valid start dates if the whole range was satisfied
                 if (ReleaseRateSatisfied)
@@ -645,8 +613,9 @@ namespace OptimizerEngine.Services
         /// <param name="instrUsername">The instructor username</param>
         /// <param name="roomID">The room id</param>
         private void UpdateMatrices(DateTime validStartDate, DateTime validEndDate, int locationId, int maxClassSize, string instrUsername,
-            int roomID, bool localAssignment, ref Dictionary<int, Dictionary<string, int>> CurrentlyReleased,
-            ref Dictionary<string, Dictionary<string, bool>> IsInstructorUnavailable, ref Dictionary<int, Dictionary<string, bool>> IsRoomUnavailable)
+            int roomID, bool localAssignment, int courseID, ref Dictionary<int, Dictionary<string, int>> CurrentlyReleased,
+            ref Dictionary<string, Dictionary<string, bool>> IsInstructorUnavailable, ref Dictionary<int, Dictionary<string, bool>> IsRoomUnavailable,
+            ref Dictionary<int, Dictionary<string, List<int>>> LocallyTaughtCoursesPerDay)
         {
             // Go through each day the course will take place
             foreach(var currentDay in OptimizerUtilities.EachWeekDay(validStartDate, validEndDate))
@@ -655,6 +624,7 @@ namespace OptimizerEngine.Services
                 CurrentlyReleased[locationId][currentDayString] += maxClassSize;
                 IsInstructorUnavailable[instrUsername][currentDayString] = true;
                 IsRoomUnavailable[roomID][currentDayString] = true;
+                LocallyTaughtCoursesPerDay[locationId][currentDayString].Add(courseID);
             }
 
             if (!localAssignment)

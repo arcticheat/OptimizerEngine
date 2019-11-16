@@ -23,6 +23,8 @@ namespace LSS.Models
         public int CourseId { get; set; }
         [NotMapped]
         public int LocationIdLiteral { get; set; }
+        [NotMapped]
+        public int RemainingRuns { get; set; }
 
     }
 }

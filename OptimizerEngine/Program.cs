@@ -16,8 +16,8 @@ namespace LSS
             bool debug = true;
             bool recursion = true;
 
-            DateTime StartDate = Convert.ToDateTime("10/14/2019");
-            DateTime EndDate = Convert.ToDateTime("10/18/2019");
+            DateTime StartDate = Convert.ToDateTime("1/1/2020");
+            DateTime EndDate = Convert.ToDateTime("1/31/2020");
 
                 if (askForInput)
                 {
@@ -37,7 +37,7 @@ namespace LSS
                 var watch = new System.Diagnostics.Stopwatch();
                 if (debug) watch = System.Diagnostics.Stopwatch.StartNew();
                 var engine = builder.Build();
-                engine.OptimizeGreedy(builder.IsRoomUnavailable, builder.IsInstructorUnavailable, builder.CurrentlyReleased);
+                engine.OptimizeGreedy(builder.IsRoomUnavailable, builder.IsInstructorUnavailable, builder.CurrentlyReleased, builder.LocallyTaughtCoursesPerDay);
                 if (debug)
                 {
                     watch.Stop();

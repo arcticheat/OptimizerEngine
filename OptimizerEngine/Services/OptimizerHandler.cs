@@ -1,10 +1,10 @@
-﻿using OptimizerEngine.Models;
+﻿using LSS.Models;
 using System;
 using System.Collections.Generic;
 using System.Text;
 using System.Threading;
 
-namespace OptimizerEngine.Services
+namespace LSS.Services
 {
     class OptimizerHandler
     {
@@ -24,7 +24,12 @@ namespace OptimizerEngine.Services
         {
             MyEngine = MyBuilder.Build();
 
-            //Thread OptimizingThread = new Thread(new ParameterizedThreadStart(Optimize));
+            Console.WriteLine("Please review the data the optimizer will be using above.\nHit Enter to continue.");
+            ConsoleKeyInfo c;
+            do
+            {
+                c = Console.ReadKey();
+            } while (c.Key != ConsoleKey.Enter);
 
             var watch = new System.Diagnostics.Stopwatch();
             if (ShowDebugMessages) watch = System.Diagnostics.Stopwatch.StartNew();
@@ -62,7 +67,7 @@ namespace OptimizerEngine.Services
                 Results = new List<OptimizerResult>()
             };
             MyResults = MyEngine.OptimizeRecursion(optimizerScheduleResults, 0, MyBuilder.IsInstructorUnavailable,
-                MyBuilder.IsRoomUnavailable, MyBuilder.CurrentlyReleased);
+                MyBuilder.IsRoomUnavailable, MyBuilder.CurrentlyReleased, MyBuilder.LocallyTaughtCoursesPerDay, 0);
             ThreadInProgress = false;
             return;
         }
