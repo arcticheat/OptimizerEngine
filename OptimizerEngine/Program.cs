@@ -1,12 +1,12 @@
-﻿using OptimizerEngine.Models;
-using OptimizerEngine.Services;
+﻿using LSS.Models;
+using LSS.Services;
 using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
 
-namespace OptimizerEngine
+namespace LSS
 {
     class Program
     {
@@ -19,14 +19,14 @@ namespace OptimizerEngine
             DateTime StartDate = Convert.ToDateTime("10/14/2019");
             DateTime EndDate = Convert.ToDateTime("10/18/2019");
 
-            if (askForInput)
-            {
-                Console.WriteLine("Enter the start day for the range to optimize (dd/mm/yyyy):");
-                StartDate = Convert.ToDateTime(Console.ReadLine());
+                if (askForInput)
+                {
+                    Console.WriteLine("Enter the start day for the range to optimize (dd/mm/yyyy):");
+                    StartDate = Convert.ToDateTime(Console.ReadLine());
 
-                Console.WriteLine("Enter the end day of the range to optimize (dd/mm/yyyy):");
-                EndDate = Convert.ToDateTime(Console.ReadLine());
-            }
+                    Console.WriteLine("Enter the end day of the range to optimize (dd/mm/yyyy):");
+                    EndDate = Convert.ToDateTime(Console.ReadLine());
+                }
 
             Console.WriteLine($"The Optimizer range is set from {StartDate} to {EndDate}");
             var builder = new Services.OptimizerEngineBuilder(StartDate, EndDate, debug);

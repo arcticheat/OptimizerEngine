@@ -1,4 +1,4 @@
-﻿using OptimizerEngine.Models;
+﻿using LSS.Models;
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -6,7 +6,7 @@ using System.Linq;
 using System.Runtime.Serialization.Formatters.Binary;
 using System.Text;
 
-namespace OptimizerEngine.Services
+namespace LSS.Services
 {
     static class OptimizerUtilities
     {
@@ -92,8 +92,8 @@ namespace OptimizerEngine.Services
             foreach (var l in Locations)
             {
                 if (!l.HasLocalRooms()) continue;
-                Console.Write($"| {l.Id}         ");
-                if (l.Id / 10 == 0)
+                Console.Write($"| {l.ID}         ");
+                if (l.ID / 10 == 0)
                     Console.Write(" ");
                 Console.Write("|");
                 string RoomsString = " ";
@@ -117,8 +117,8 @@ namespace OptimizerEngine.Services
             foreach (var l in Locations)
             {
                 if (!l.HasLocalInstructors()) continue;
-                Console.Write($"| {l.Id}         ");
-                if (l.Id / 10 == 0)
+                Console.Write($"| {l.ID}         ");
+                if (l.ID / 10 == 0)
                     Console.Write(" ");
                 Console.Write("|");
                 string InstructorString = " ";

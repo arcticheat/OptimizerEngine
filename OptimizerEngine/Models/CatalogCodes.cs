@@ -5,12 +5,12 @@ using System.Threading.Tasks;
 
 namespace LSS.Models
 {
-    public class Role
+    public class CatalogCodes
     {
-        //Role ID
+        //ID
         public int ID { get; set; }
 
-        //Role Name 
-        public string Name { get; set; }
+        //Catalog Code 
+        public String Code { get; set; }
     }
 }

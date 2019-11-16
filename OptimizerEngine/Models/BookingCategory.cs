@@ -1,11 +1,16 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Linq;
+using System.Threading.Tasks;
 
-namespace OptimizerEngine.Models
+namespace LSS.Models
 {
-    public partial class BookingCategory
+    public class BookingCategory
     {
-        public int Id { get; set; }
-        public string Category { get; set; }
+        //Category ID
+        public int ID { get; set; }
+
+        //Category Description 
+        public String Category { get; set; }
     }
 }

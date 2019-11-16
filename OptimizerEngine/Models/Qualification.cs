@@ -1,18 +1,39 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Linq;
+using System.Threading.Tasks;
 
-namespace OptimizerEngine.Models
+namespace LSS.Models
 {
-    public partial class Qualification
+    public class Qualification
     {
-        public int Id { get; set; }
-        public bool Week1 { get; set; }
-        public bool Week2 { get; set; }
-        public bool Week3 { get; set; }
-        public bool Week4 { get; set; }
+        //Qualification ID
+        public int ID { get; set; }
+
+        //Qualified to teach week 1 flag
+        public bool Week_1 { get; set; }
+
+        //Qualified to teach week 2 flag
+        public bool Week_2 { get; set; }
+
+        //Qualified to teach week 3 flag
+        public bool Week_3 { get; set; }
+
+        //Qualified to teach week 4 flag
+        public bool Week_4 { get; set; }
+
+        //Conditions flag
         public bool Condition { get; set; }
+
+        //Qualification Code
         public string QualificationCode { get; set; }
+
+        //Description
         public string Description { get; set; }
+
+        //Deleted flag
         public bool Deleted { get; set; }
+
+
     }
 }

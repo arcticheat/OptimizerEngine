@@ -1,11 +1,16 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Linq;
+using System.Threading.Tasks;
 
-namespace OptimizerEngine.Models
+namespace LSS.Models
 {
-    public partial class Status
+    public class Status
     {
-        public int Id { get; set; }
-        public string Description { get; set; }
+        //Status ID
+        public int ID { get; set; }
+
+        //Status Description
+        public String Description { get; set; }
     }
 }
