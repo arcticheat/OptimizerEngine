@@ -3,6 +3,7 @@ using System.Collections.Generic;
 
 namespace OptimizerEngine.Models
 {
+    [Serializable]
     public partial class User
     {
         public string FileNumber { get; set; }

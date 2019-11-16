@@ -4,6 +4,7 @@ using System.ComponentModel.DataAnnotations.Schema;
 
 namespace OptimizerEngine.Models
 {
+    [Serializable]
     public partial class OptimizerInput
     {
         public int Id { get; set; }
@@ -20,6 +21,24 @@ namespace OptimizerEngine.Models
         public int CourseId { get; set; }
         [NotMapped]
         public int LocationIdLiteral { get; set; }
+
+        public OptimizerInput()
+        {
+
+        }
+        public OptimizerInput(OptimizerInput input)
+        {
+            Id = input.Id;
+            CourseCode = input.CourseCode;
+            NumTimesToRun = input.NumTimesToRun;
+            StartTime = input.StartTime;
+            CourseTitle = input.CourseTitle;
+            Succeeded = input.Succeeded;
+            Reason = input.Reason;
+            LengthDays = input.LengthDays;
+            CourseId = input.CourseId;
+            LocationIdLiteral = input.LocationIdLiteral;
+        }
 
     }
 }

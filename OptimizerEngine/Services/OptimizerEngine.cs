@@ -24,6 +24,9 @@ namespace OptimizerEngine.Services
         public DateTime EndDate;
         public bool ShowDebugMessages;
         public int InputCount;
+        private int CurrentBestScore = -1;
+        private bool FullAnswerFound = false;
+        public int TotalWeekDays;
 
         /// <summary>
         /// The optimizer will calculate a single collection of optimizer results created from the optimizer input
@@ -206,35 +209,32 @@ namespace OptimizerEngine.Services
             if (ShowDebugMessages) Console.WriteLine("Optimization Complete.\n");
         }
 
-        internal OptimizerScheduleResults OptimizeRecursion(ref List<OptimizerInput> inputs, OptimizerScheduleResults optimizerScheduleResults,
+        internal OptimizerScheduleResults OptimizeRecursion(OptimizerScheduleResults IncomingResults, int InputIndex,
             Dictionary<string, Dictionary<string, bool>> IsInstructorUnavailable, Dictionary<int, Dictionary<string, bool>> IsRoomUnavailable,
-            Dictionary<int, Dictionary<string, int>> CurrentlyReleased, int depth)
+            Dictionary<int, Dictionary<string, int>> CurrentlyReleased)
         {
-            // Copy the schedule results that are being built for this node
-            var myResults = new OptimizerScheduleResults(optimizerScheduleResults);
-
-            Console.WriteLine($"Current depth: {depth}");
             // base case if there are no more inputs
-            if (inputs.Count <= 0)
+            if (InputIndex >= InputCount)
             {
-                Console.WriteLine($"Possible schedule found with {myResults.Results.Count} out of {InputCount} scheduled.");
                 // calculate score
-                return myResults;
+                IncomingResults.OptimizationScore = IncomingResults.Results.Count;
+                // this answer has all the values, return
+                if (IncomingResults.OptimizationScore == InputCount)
+                    FullAnswerFound = true;
+
+                return IncomingResults;
             }
             // recursion
             else
             {
-                // pop the first result from the inputs
-                var CurrentInput = inputs[0];
-                inputs.RemoveAt(0);
-                //Console.WriteLine($"Node is considering the input with ID {CurrentInput.Id}");
+                // Obtain the current input information for reference
+                var CurrentInput = IncomingResults.Inputs[InputIndex];
 
+                // Container to store all the possible ways to schedule this input
                 var PossibleSchedulingsForInput = new List<OptimizerResult>();
 
                 // flags to determine possible reason for failure
-                bool NoInstructor = true, NoRoom = true;
-
-                //if (ShowDebugMessages) Console.WriteLine($"Calculating result for input ID {CurrentInput.Id}... ");
+                bool NoInstructor = true, NoRoom = true, ExceededReleaseRate = true;
 
                 // Obtain the class max size and the location release rate for the function call to find the valid start dates
                 var MaxClassSize = CourseCatalog.Where(course => course.Id == CurrentInput.CourseId).First().MaxSize;
@@ -245,18 +245,14 @@ namespace OptimizerEngine.Services
 
                 // Obtain all possible start dates (restricted by location release rate and course length)
                 var ValidStartDates = FindValidStartDates(CurrentInput.LocationIdLiteral, CurrentInput.LengthDays, MaxClassSize, ReleaseRate, CurrentlyReleased);
-                if (ValidStartDates.Count <= 0)
-                {
-                    //if (ShowDebugMessages) Console.WriteLine($"The input could not be scheduled because the location {CurrentInput.LocationId} would exceed its release rate.");
-                    CurrentInput.Reason = "Release rate would be exceeded.";
-                }
+                    
 
                 // Loop through each day within the optimizer range that the course could start on
                 var lastDate = ValidStartDates.LastOrDefault();
 
                 foreach (var ValidStartDate in ValidStartDates)
                 {
-                    //if (ShowDebugMessages) Console.WriteLine($"Searching on the start date {ValidStartDate.ToString(TIME_FORMAT)} for an instructor and room.");
+                    ExceededReleaseRate = false;
                     // Set the end date for this range based off of the course length
                     var ValidEndDate = ValidStartDate.AddDays(CurrentInput.LengthDays - 1);
 
@@ -267,7 +263,6 @@ namespace OptimizerEngine.Services
                         if (IsInstructorAvailableForDateRange(Instructor, ValidStartDate, ValidEndDate, IsInstructorUnavailable))
                         {
                             NoInstructor = false;
-                            //if (ShowDebugMessages) Console.WriteLine($"The instructor {Instructor} is available.");
 
                             // Loop through all local rooms for this location
                             // but only the rooms that have the right type and quantity of resources required by this course type
@@ -279,7 +274,6 @@ namespace OptimizerEngine.Services
                                 if (IsRoomAvailbleForDateRange(RoomID, ValidStartDate, ValidEndDate, IsRoomUnavailable))
                                 {
                                     NoRoom = false;
-                                    //if (ShowDebugMessages) Console.WriteLine($"The Room {RoomID} is available.");
 
                                     // Found an answer so set the remaining fields for the result
                                     // result object for this input
@@ -305,66 +299,126 @@ namespace OptimizerEngine.Services
 
                                     // Add this result to all the possible results from this node
                                     PossibleSchedulingsForInput.Add(Result);
-
-                                    if (ShowDebugMessages)
-                                    {
-                                        //Console.WriteLine($"A solution is for the course to be scheduled from {ValidStartDate.ToString(TIME_FORMAT)}" +
-                                        //$" to {ValidStartDate.AddDays(CurrentInput.LengthDays - 1).ToString(TIME_FORMAT)}  with the room and instructor listed above.");
-                                    }
                                 }
                             }
                         }
                     }
                 }
-                // No possible answers
-                if (PossibleSchedulingsForInput.Count <= 0)
-                {
-                    // skip input and consider the next
-                    if (NoInstructor & !NoRoom)
-                        CurrentInput.Reason = "No instructor is available";
-                    else if (!NoInstructor & NoRoom)
-                        CurrentInput.Reason = "No room is available";
-                    else
-                        CurrentInput.Reason = "Error";
+                // Container to hold every child node's answer
+                var SubNodeAnswers = new List<OptimizerScheduleResults>();
 
-                    optimizerScheduleResults.FailedToSchedule.Add(CurrentInput);
-                    //Console.WriteLine("This node has failed to schedule anything...continuing to the next node.\n");
-                    return OptimizeRecursion(ref inputs, optimizerScheduleResults, IsInstructorUnavailable, IsRoomUnavailable, CurrentlyReleased, ++depth);
-                }
-                // At least one continuation is possible from this node
-                else
+                // If this course should be scheduled multiple times, obtain all combinations of this class with itself scheduled at different times
+                var combos = BuildCombinations(PossibleSchedulingsForInput, new List<OptimizerResult>(), CurrentInput.NumTimesToRun, -1);
+                // branch for each combo 
+                foreach (var combo in combos)
                 {
-                    var SubNodeAnswers = new List<OptimizerScheduleResults>();
-                    // Case where the class has to be scheduled multiple times at unique spots
-                    //if (CurrentInput.NumTimesToRun > 1)
-                    //{
-                    //    var combinations = BuildCombinations(ref PossibleSchedulingsForInput, new List<OptimizerResult>(), 0, CurrentInput.NumTimesToRun);
-                    //}
-                    var copy = optimizerScheduleResults;
-                    foreach (var Result in PossibleSchedulingsForInput)
+                    // Deep copy the current results so this child node will have a unique result object to build from
+                    var MyResults = OptimizerUtilities.DeepClone(IncomingResults);
+
+                    // Copy all the unavailability data trackers to update them for this recursion
+                    var CRCopy = new Dictionary<int, Dictionary<string, int>>();
+                    foreach (var outerPair in CurrentlyReleased)
                     {
-                        // Copy all the unavailability data trackers to update them for this recursion
-                        var CRCopy = CurrentlyReleased;
-                        var IIUCopy = IsInstructorUnavailable;
-                        var IRUCopy = IsRoomUnavailable;
+                        CRCopy[outerPair.Key] = new Dictionary<string, int>();
+                        foreach (var innerPair in outerPair.Value)
+                        {
+                            CRCopy[outerPair.Key][innerPair.Key] = innerPair.Value;
+                        }
+                    }
+                    var IIUCopy = new Dictionary<string, Dictionary<string, bool>>();
+                    foreach (var outerPair in IsInstructorUnavailable)
+                    {
+                        IIUCopy[outerPair.Key] = new Dictionary<string, bool>();
+                        foreach (var innerPair in outerPair.Value)
+                        {
+                            IIUCopy[outerPair.Key][innerPair.Key] = innerPair.Value;
+                        }
+                    }
+                    var IRUCopy = new Dictionary<int, Dictionary<string, bool>>();
+                    foreach (var outerPair in IsRoomUnavailable)
+                    {
+                        IRUCopy[outerPair.Key] = new Dictionary<string, bool>();
+                        foreach (var innerPair in outerPair.Value)
+                        {
+                            IRUCopy[outerPair.Key][innerPair.Key] = innerPair.Value;
+                        }
+                    }
 
-                        // If update the copies data containers with the scheduling info for this result
+                    // update the availability markers for each result of the combo and add it to the results
+                    foreach (var Result in combo)
+                    {
+                        //update the data container copies with the scheduling info for this result
                         UpdateMatrices(Result.StartDate, Result.EndDate, CurrentInput.LocationIdLiteral, MaxClassSize, Result.InstrUsername, Result.RoomID, Result.UsingLocalInstructor,
                             ref CRCopy, ref IIUCopy, ref IRUCopy);
 
-                        myResults.Results.Add(Result);
-
-                        // Recursion!
-                        //Console.WriteLine("Recursion...");
-                        SubNodeAnswers.Add(OptimizeRecursion(ref inputs, myResults, IIUCopy, IRUCopy, CRCopy, ++depth));
-
-                        // Remove this result for other answers
-                        myResults.Results.Remove(Result);
+                        // Add the result
+                        MyResults.Results.Add(Result);
                     }
-                    Console.WriteLine($"{SubNodeAnswers.Count} children have returned an answer. Returning the best answer...\n");
-                    // Pick best answer
-                    return SelectMostScheduled(SubNodeAnswers);
+                    // Set that the input has succeeded
+                    if (combo.Count < CurrentInput.NumTimesToRun)
+                    {
+                        MyResults.Inputs[InputIndex].Succeeded = false;
+                        MyResults.Inputs[InputIndex].Reason = $"Could only schedule {combo.Count} out of {CurrentInput.NumTimesToRun}.";
+                    }
+                    else
+                        MyResults.Inputs[InputIndex].Succeeded = true;
+                    // Add the child's answer 
+                    var SubNodeAnswer = new OptimizerScheduleResults(OptimizeRecursion(MyResults, InputIndex + 1, IIUCopy, IRUCopy, CRCopy));
+                    SubNodeAnswers.Add(SubNodeAnswer);
                 }
+
+                // Must always consider what would happen if this input is not scheduled
+                var ResultsNotScheduled = OptimizerUtilities.DeepClone(IncomingResults);
+                ResultsNotScheduled.Inputs[InputIndex].Succeeded = false;
+
+                // Always consider not scheduling this course
+                //If there is a reason to skip, set it
+                if (ExceededReleaseRate)
+                    ResultsNotScheduled.Inputs[InputIndex].Reason = "No valid start date";
+                if (NoInstructor)
+                    ResultsNotScheduled.Inputs[InputIndex].Reason = "No instructor is available";
+                else if (NoRoom)
+                    ResultsNotScheduled.Inputs[InputIndex].Reason = "No room is available";
+                else
+                    ResultsNotScheduled.Inputs[InputIndex].Reason = "Skipped";
+
+                // Copy all the unavailability data trackers to update them for this recursion
+                var CRCopy_skip = new Dictionary<int, Dictionary<string, int>>();
+                foreach (var outerPair in CurrentlyReleased)
+                {
+                    CRCopy_skip[outerPair.Key] = new Dictionary<string, int>();
+                    foreach (var innerPair in outerPair.Value)
+                    {
+                        CRCopy_skip[outerPair.Key][innerPair.Key] = innerPair.Value;
+                    }
+                }
+                var IIUCopy_skip = new Dictionary<string, Dictionary<string, bool>>();
+                foreach (var outerPair in IsInstructorUnavailable)
+                {
+                    IIUCopy_skip[outerPair.Key] = new Dictionary<string, bool>();
+                    foreach (var innerPair in outerPair.Value)
+                    {
+                        IIUCopy_skip[outerPair.Key][innerPair.Key] = innerPair.Value;
+                    }
+                }
+                var IRUCopy_skip = new Dictionary<int, Dictionary<string, bool>>();
+                foreach (var outerPair in IsRoomUnavailable)
+                {
+                    IRUCopy_skip[outerPair.Key] = new Dictionary<string, bool>();
+                    foreach (var innerPair in outerPair.Value)
+                    {
+                        IRUCopy_skip[outerPair.Key][innerPair.Key] = innerPair.Value;
+                    }
+                }
+
+                // Recursion on skipping this input
+                var AnswerWithoutThisInput = OptimizeRecursion(ResultsNotScheduled, InputIndex + 1, IIUCopy_skip, IRUCopy_skip, CRCopy_skip);
+                SubNodeAnswers.Add(AnswerWithoutThisInput);
+
+                // Pick best answer
+                var bestAnswer = SelectMostScheduled(SubNodeAnswers);
+                //if (bestAnswer.OptimizationScore > CurrentBestScore)
+                return bestAnswer;
             }   
         }
 
@@ -376,67 +430,69 @@ namespace OptimizerEngine.Services
         /// <param name="Index">The current index to check the list of possible scheduling</param>
         /// <param name="numTimesToRun">The total number of times the course should be scheduled, or, the length of the combination</param>
         /// <returns></returns>
-        private List<List<OptimizerResult>> BuildCombinations(ref List<OptimizerResult> possibleScheduling, List<OptimizerResult> myCombination, int Index, int numTimesToRun)
+        public List<List<OptimizerResult>> BuildCombinations(List<OptimizerResult> Entities, List<OptimizerResult> MyCombo, int NumTimesToRun, int IndexOfLastAdded)
         {
-            var Combinations = new List<List<OptimizerResult>>();
+            var MyComboCollection = new List<List<OptimizerResult>>();
 
-            // Add the scheduling at the current index to the combo
-            var combo_copy = new List<OptimizerResult>(myCombination)
-            {
-                possibleScheduling[Index]
-            };
+            if (Entities.Count <= 0)
+                return MyComboCollection;
 
-            // Base case -- Combination is complete so return it
-            if (combo_copy.Count == numTimesToRun)
+            // Base Case
+            if (MyCombo.Count >= NumTimesToRun || MyCombo.Count >= Entities.Count || MyCombo.Count >= TotalWeekDays)
             {
-                Combinations.Add(combo_copy);
-                return Combinations;
+                MyComboCollection.Add(MyCombo);
             }
-            // Recursion
+            //Recursion 
             else
             {
-                // Consider every scheduling pass the index of this one
-                for (int i = Index + 1; i < possibleScheduling.Count; i++)
+                // Loop through every possible result after the last one
+                for(var i = IndexOfLastAdded + 1; i < Entities.Count; i++)
                 {
-                    // To be in combination, not a single class can be at the same time
-                    bool NoConflicts = true;
-                    for(int j = 0; j <= Index; j++)
+                    // If there are previous results in the combo to check for conflicts
+                    if (MyCombo.Count > 0)
                     {
-                        if (possibleScheduling[i].StartDate == possibleScheduling[j].StartDate)
+                        // Check every current result in the combo
+                        foreach(var ResultInCombo in MyCombo)
                         {
-                            NoConflicts = false;
-                            break;
+                            // Make sure that the possible result isn't at the same time as an existing result of the combo 
+                            if (ResultInCombo.StartDate != Entities[i].StartDate)
+                            {
+                                var MyComboCopy = OptimizerUtilities.DeepClone(MyCombo);
+                                MyComboCopy.Add(Entities[i]);
+                                MyComboCollection.AddRange(BuildCombinations(Entities, MyComboCopy, NumTimesToRun, i));
+                            }
                         }
                     }
-                    if (NoConflicts)
+                    else
                     {
-                        combo_copy.Add(possibleScheduling[i]);
-                        Combinations.AddRange(BuildCombinations(ref possibleScheduling, combo_copy, ++Index, numTimesToRun));
-                        combo_copy.Remove(possibleScheduling[i]);
+                        var MyComboCopy = OptimizerUtilities.DeepClone(MyCombo);
+                        MyComboCopy.Add(Entities[i]);
+                        MyComboCollection.AddRange(BuildCombinations(Entities, MyComboCopy, NumTimesToRun, i));
                     }
                 }
-                return Combinations;
             }
+            return MyComboCollection;
         }
-
-        // base case
-        // count is satisfactory, return answer
-
-        // else
-        // recursion on all answers past index
 
         private OptimizerScheduleResults SelectMostScheduled(List<OptimizerScheduleResults> subNodeAnswers)
         {
             var max = 0;
-            OptimizerScheduleResults bestAnswer = null;
+            var bestAnswer = new OptimizerScheduleResults
+            {
+                Results = new List<OptimizerResult>(),
+                Inputs = new List<OptimizerInput>(),
+                OptimizationScore = 0
+            };
             foreach(var answer in subNodeAnswers)
             {
+                if (answer.Results.Count == 0) continue;
                 if (answer.Results.Count > max)
                 {
                     max = answer.Results.Count;
                     bestAnswer = answer;
                 }
             }
+            bestAnswer.OptimizationScore = max;
             return bestAnswer;
         }
 

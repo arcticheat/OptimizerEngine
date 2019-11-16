@@ -28,12 +28,12 @@ namespace OptimizerEngine.Services
         /// <param name="showSetup">Will write to console debug images to display the data that is pulled in</param>
         /// <param name="StartDate">The beginning of the optimization range</param>
         /// <param name="EndDate">The end of the optimizaiton range</param>
-        internal OptimizerEngine Build(DateTime Start, DateTime End)
+        internal OptimizerEngine Build(DateTime start, DateTime end)
         {
             if (ShowDebugMessages) Console.WriteLine("Pulling in data from the database...\n");
             Engine.ShowDebugMessages = ShowDebugMessages;
-            Engine.StartDate = Start;
-            Engine.EndDate = End;
+            Engine.StartDate = start;
+            Engine.EndDate = end;
             using (var context = new DatabaseContext())
             {
                 // Pull in instructors
@@ -170,6 +170,8 @@ namespace OptimizerEngine.Services
                     WeekDaysInRange.Add(day.ToString(TIME_FORMAT));
                 }
                 if (ShowDebugMessages) Console.WriteLine("Count of week days in range: " + WeekDaysInRange.Count());
+                Engine.TotalWeekDays = WeekDaysInRange.Count;
+
 
                 // Fill the 2d dictionary IsRoomUnavailable
                 // First pair: value is the room id to a second dictionary

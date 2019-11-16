@@ -5,6 +5,7 @@ using System.Text;
 
 namespace OptimizerEngine.Models
 {
+    [Serializable]
     public class OptimizerResult
     {
 

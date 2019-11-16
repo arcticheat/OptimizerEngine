@@ -6,20 +6,17 @@ using System.Text;
 
 namespace OptimizerEngine.Models
 {
-    public class OptimizerScheduleResults
+    [Serializable]
+    public struct OptimizerScheduleResults
     {
-        public List<OptimizerResult> Results = new List<OptimizerResult>();
-        public List<OptimizerInput> FailedToSchedule = new List<OptimizerInput>();
-        public int OptimizationScore = -1;
+        public List<OptimizerResult> Results;
+        public List<OptimizerInput> Inputs;
+        public int OptimizationScore;
 
-        public OptimizerScheduleResults()
-        {
-
-        }
         public OptimizerScheduleResults(OptimizerScheduleResults op)
         {
             this.Results = new List<OptimizerResult>(op.Results);
-            this.FailedToSchedule = new List<OptimizerInput> (op.FailedToSchedule);
+            this.Inputs = new List<OptimizerInput> (op.Inputs);
             this.OptimizationScore = op.OptimizationScore;
         }
 
@@ -30,7 +27,7 @@ namespace OptimizerEngine.Models
             Console.WriteLine("");
 
             Console.WriteLine("Optimizer Failed Results");
-            ConsoleTable.From<OptimizerInput>(FailedToSchedule).Write(Format.MarkDown);
+            ConsoleTable.From<OptimizerInput>(Inputs.Where(input => input.Succeeded == false)).Write(Format.MarkDown);
             Console.WriteLine();
         }
     }
