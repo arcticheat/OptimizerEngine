@@ -10,15 +10,21 @@ namespace OptimizerEngine.Services
     class OptimizerEngineBuilder
     {
         private OptimizerEngine Engine;
-        private bool ShowDebugMessages;
+        private DateTime StartDate;
+        private DateTime EndDate;
+        public bool ShowDebugMessages;
         public Dictionary<int, Dictionary<string, bool>> IsRoomUnavailable = new Dictionary<int, Dictionary<string, bool>>();
         public Dictionary<string, Dictionary<string, bool>> IsInstructorUnavailable = new Dictionary<string, Dictionary<string, bool>>();
         public Dictionary<int, Dictionary<string, int>> CurrentlyReleased = new Dictionary<int, Dictionary<string, int>>();
+        public Dictionary<int, Dictionary<string, List<string>>> LocallyTaughtCoursesPerDay = new Dictionary<int, Dictionary<string, List<string>>>();
         public string TIME_FORMAT = "MM/dd/yyyy";
 
-        public OptimizerEngineBuilder(bool debug = false)
+
+        public OptimizerEngineBuilder(DateTime start, DateTime end, bool debug = false)
         {
             ShowDebugMessages = debug;
+            StartDate = start;
+            EndDate = end;
             Engine = new OptimizerEngine();
         }
 
@@ -28,12 +34,12 @@ namespace OptimizerEngine.Services
         /// <param name="showSetup">Will write to console debug images to display the data that is pulled in</param>
         /// <param name="StartDate">The beginning of the optimization range</param>
         /// <param name="EndDate">The end of the optimizaiton range</param>
-        internal OptimizerEngine Build(DateTime start, DateTime end)
+        internal OptimizerEngine Build()
         {
             if (ShowDebugMessages) Console.WriteLine("Pulling in data from the database...\n");
             Engine.ShowDebugMessages = ShowDebugMessages;
-            Engine.StartDate = start;
-            Engine.EndDate = end;
+            Engine.StartDate = StartDate;
+            Engine.EndDate = EndDate;
             using (var context = new DatabaseContext())
             {
                 // Pull in instructors
@@ -85,6 +91,7 @@ namespace OptimizerEngine.Services
                               LocationIdLiteral = location.Id
                           }).ToList<OptimizerInput>();
                 Engine.InputCount = Engine.Inputs.Count;
+                Engine.NodesPerDepth = new int[Engine.Inputs.Count];
                 if (ShowDebugMessages)
                 {
                     Console.WriteLine("Optimizer Inputs");
@@ -172,6 +179,12 @@ namespace OptimizerEngine.Services
                 if (ShowDebugMessages) Console.WriteLine("Count of week days in range: " + WeekDaysInRange.Count());
                 Engine.TotalWeekDays = WeekDaysInRange.Count;
 
+                // Link each location to its locally taught courses per day
+                foreach (var loc in Engine.Locations)
+                {
+                    LocallyTaughtCoursesPerDay.Add(loc.Id, WeekDaysInRange.ToDictionary(x => x, x => new List<string>(1)));
+                }
+
 
                 // Fill the 2d dictionary IsRoomUnavailable
                 // First pair: value is the room id to a second dictionary
@@ -195,6 +208,7 @@ namespace OptimizerEngine.Services
                     {
                         IsRoomUnavailable[clas.RoomID][date.ToString(TIME_FORMAT)] = true;
                         CurrentlyReleased[clas.LocationID][date.ToString(TIME_FORMAT)] += Engine.CourseCatalog.Find(course => course.Id == clas.CourseID).MaxSize;
+                        LocallyTaughtCoursesPerDay[clas.LocationID][date.ToString(TIME_FORMAT)].Add(clas.CourseID.ToString());
                     }
                 }
                 if (ShowDebugMessages)
@@ -219,6 +233,18 @@ namespace OptimizerEngine.Services
                     {
                         var row = new List<string> { LocPair.Key.ToString() };
                         LocPair.Value.ToList().ForEach(pair => row.Add(pair.Value.ToString()));
+                        table.AddRow(row.ToArray());
+                    }
+                    table.Write(Format.MarkDown);
+
+                    Console.WriteLine("Locally taught courses at each location");
+                    Headers = new List<string> { "LocationID" };
+                    WeekDaysInRange.ForEach(day => Headers.Add(day.Substring(0, day.Length - 5)));
+                    table = new ConsoleTable(Headers.ToArray());
+                    foreach (var Location in LocallyTaughtCoursesPerDay)
+                    {
+                        var row = new List<string> { Location.Key.ToString() };
+                        Location.Value.Values.ToList().ForEach(list => row.Add(string.Join(", ", list)));
                         table.AddRow(row.ToArray());
                     }
                     table.Write(Format.MarkDown);
@@ -280,6 +306,15 @@ namespace OptimizerEngine.Services
                     table.Write(Format.MarkDown);
                 }
             }
+
+            // Setup the best answer as something guarenteed to always be the worst
+            Engine.CurrentBestAnswer = new OptimizerScheduleResults
+            {
+                Results = new List<OptimizerResult>(),
+                Inputs = new List<OptimizerInput>(),
+                OptimizationScore = -1
+            };
+
             if (ShowDebugMessages) Console.WriteLine("Data loading complete.\n");
 
             return Engine;

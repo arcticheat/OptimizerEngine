@@ -16,6 +16,8 @@ namespace OptimizerEngine.Models
         public List<int> LocalRooms { get; set; } = new List<int>();
         [NotMapped]
         public List<string> LocalInstructors { get; set; } = new List<string>();
+        [NotMapped]
+        public Dictionary<string, List<string>> LocallyTaughtCoursesPerDay = new Dictionary<string, List<string>>();
       
         public bool HasLocalRooms()
         {

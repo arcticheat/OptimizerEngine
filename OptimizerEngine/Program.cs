@@ -14,10 +14,10 @@ namespace OptimizerEngine
         {
             bool askForInput = false;
             bool debug = true;
-            var builder = new Services.OptimizerEngineBuilder(debug);
+            bool recursion = true;
 
-            DateTime StartDate = Convert.ToDateTime("1/6/2020");
-            DateTime EndDate = Convert.ToDateTime("1/10/2020");
+            DateTime StartDate = Convert.ToDateTime("10/14/2019");
+            DateTime EndDate = Convert.ToDateTime("10/18/2019");
 
             if (askForInput)
             {
@@ -29,49 +29,28 @@ namespace OptimizerEngine
             }
 
             Console.WriteLine($"The Optimizer range is set from {StartDate} to {EndDate}");
-            var engine = builder.Build(StartDate, EndDate);
-
-            var watch = new System.Diagnostics.Stopwatch();
-            if (debug) watch = System.Diagnostics.Stopwatch.StartNew();
+            var builder = new Services.OptimizerEngineBuilder(StartDate, EndDate, debug);
 
             // Greedy
-            //engine.OptimizeGreedy(builder.IsRoomUnavailable, builder.IsInstructorUnavailable, builder.CurrentlyReleased);
-            //watch.Stop();
-            //Console.WriteLine($"Time in milliseconds: {watch.ElapsedMilliseconds}");
-
-            // Recursion
-            var optimizerScheduleResults = new OptimizerScheduleResults
+            if (!recursion)
             {
-                Inputs = engine.Inputs,
-                Results = new List<OptimizerResult>()
-            };
-
-            //Thread OptimizingThread = new Thread(new ParameterizedThreadStart(Optimize));
-
-            Console.WriteLine("Optimizing...");
-
-            var results = engine.OptimizeRecursion(optimizerScheduleResults, 0, builder.IsInstructorUnavailable,
-                builder.IsRoomUnavailable, builder.CurrentlyReleased);
-
-            if (debug) Console.WriteLine("Optimization Complete.\n");
-
-            if (debug)
-            {
-                watch.Stop();
-                results.Print();
-                Console.WriteLine($"Time in milliseconds: {watch.ElapsedMilliseconds}");
+                var watch = new System.Diagnostics.Stopwatch();
+                if (debug) watch = System.Diagnostics.Stopwatch.StartNew();
+                var engine = builder.Build();
+                engine.OptimizeGreedy(builder.IsRoomUnavailable, builder.IsInstructorUnavailable, builder.CurrentlyReleased);
+                if (debug)
+                {
+                    watch.Stop();
+                    Console.WriteLine($"Time in milliseconds: {watch.ElapsedMilliseconds}ms");
+                }
             }
-
+            // Recursion
+            else
+            {
+                var handler = new OptimizerHandler(builder);
+                handler.Run();
+            }
         }
-        //public static void Optimize(object param)
-        //{
-        //    var builder = (OptimizerEngineBuilder)param;
-        //    var engine = builder.Build();
-        //    var optimizerScheduleResults = new OptimizerScheduleResults();
-        //    optimizerScheduleResults.Inputs = engine.Inputs;
-        //    optimizerScheduleResults.Results = new List<OptimizerResult>();
-        //    Results = engine.OptimizeRecursion(optimizerScheduleResults, 0, builder.IsInstructorUnavailable, builder.IsRoomUnavailable, builder.CurrentlyReleased);
-        //}
     }
 }   
 

@@ -24,9 +24,11 @@ namespace OptimizerEngine.Services
         public DateTime EndDate;
         public bool ShowDebugMessages;
         public int InputCount;
-        private int CurrentBestScore = -1;
-        private bool FullAnswerFound = false;
+        public OptimizerScheduleResults CurrentBestAnswer;
+        private int TotalSchedulesCreated = -1;
+        private int NonEndNodesThatReturned = -1;
         public int TotalWeekDays;
+        public int[] NodesPerDepth;
 
         /// <summary>
         /// The optimizer will calculate a single collection of optimizer results created from the optimizer input
@@ -203,7 +205,8 @@ namespace OptimizerEngine.Services
                     context.Entry(input).State = input.Id == 0 ? EntityState.Added : EntityState.Modified;
                 }
                 // Save data to the context
-                context.SaveChanges();
+                // TODOD UN DO MEME
+                //context.SaveChanges();
             }
 
             if (ShowDebugMessages) Console.WriteLine("Optimization Complete.\n");
@@ -219,14 +222,22 @@ namespace OptimizerEngine.Services
                 // calculate score
                 IncomingResults.OptimizationScore = IncomingResults.Results.Count;
                 // this answer has all the values, return
-                if (IncomingResults.OptimizationScore == InputCount)
-                    FullAnswerFound = true;
-
+                TotalSchedulesCreated++;
                 return IncomingResults;
             }
             // recursion
             else
             {
+                // Predict if a better answer is even possible from here
+                // First see if adding every single remaining class for the remainder of this branch would 
+                // create a result with more successful resutls than the best
+                if (InputCount - InputIndex + IncomingResults.Results.Count <= CurrentBestAnswer.Results.Count)
+                {
+                    // This branch cannot possibly come up with a better answer than what is already found
+                    Console.WriteLine("Bounding!");
+                    return CurrentBestAnswer;
+                }
+
                 // Obtain the current input information for reference
                 var CurrentInput = IncomingResults.Inputs[InputIndex];
 
@@ -308,7 +319,11 @@ namespace OptimizerEngine.Services
                 var SubNodeAnswers = new List<OptimizerScheduleResults>();
 
                 // If this course should be scheduled multiple times, obtain all combinations of this class with itself scheduled at different times
-                var combos = BuildCombinations(PossibleSchedulingsForInput, new List<OptimizerResult>(), CurrentInput.NumTimesToRun, -1);
+                var MaxComboSize = Math.Min(CurrentInput.NumTimesToRun, ValidStartDates.Count);
+                var combos = BuildCombinations(PossibleSchedulingsForInput, new List<OptimizerResult>(), MaxComboSize, -1);
+
+                NodesPerDepth[InputIndex] += combos.Count + 1;
+
                 // branch for each combo 
                 foreach (var combo in combos)
                 {
@@ -347,6 +362,11 @@ namespace OptimizerEngine.Services
                     // update the availability markers for each result of the combo and add it to the results
                     foreach (var Result in combo)
                     {
+                        // Always check if the best answer is already found
+                        if (IsABestAnswerFound())
+                        {
+                            return CurrentBestAnswer;
+                        }
                         //update the data container copies with the scheduling info for this result
                         UpdateMatrices(Result.StartDate, Result.EndDate, CurrentInput.LocationIdLiteral, MaxClassSize, Result.InstrUsername, Result.RoomID, Result.UsingLocalInstructor,
                             ref CRCopy, ref IIUCopy, ref IRUCopy);
@@ -416,10 +436,39 @@ namespace OptimizerEngine.Services
                 SubNodeAnswers.Add(AnswerWithoutThisInput);
 
                 // Pick best answer
-                var bestAnswer = SelectMostScheduled(SubNodeAnswers);
-                //if (bestAnswer.OptimizationScore > CurrentBestScore)
+                var bestAnswer = SelectBestAnswer(SubNodeAnswers);
+                NonEndNodesThatReturned++;
+                if (bestAnswer.OptimizationScore > CurrentBestAnswer.OptimizationScore)
+                    CurrentBestAnswer = bestAnswer;
                 return bestAnswer;
             }   
+        }
+
+        /// <summary>
+        /// Return a status report of the current optimization
+        /// </summary>
+        public string GetStatus(string counter, TimeSpan elapsedTime)
+        {
+
+            var status = $"\n              Status {counter} \n";
+            status += "--------------------------------------|\n";
+            status += $"Elapsed time: {elapsedTime.Hours}h:{elapsedTime.Minutes}m:{elapsedTime.Seconds}s\n";
+            status += $"Total schedules created: {TotalSchedulesCreated}\n";
+            status += $"Non end-node evaluations completed: {NonEndNodesThatReturned}\n";
+            status += $"Current best optimization score: {CurrentBestAnswer.OptimizationScore}\n";
+            status += "Nodes per tree level\n";
+            status += "Level 0: Node Count 1\n";
+            for (int i = 0; i < NodesPerDepth.Length; i++)
+            {
+                status += $"Level {i + 1}: Node Count {NodesPerDepth[i]}\n";
+            }
+            status += "--------------------------------------|";
+            return status;
+        }
+
+        public bool IsABestAnswerFound()
+        {
+            return CurrentBestAnswer.OptimizationScore == InputCount;
         }
 
         /// <summary>
@@ -430,15 +479,17 @@ namespace OptimizerEngine.Services
         /// <param name="Index">The current index to check the list of possible scheduling</param>
         /// <param name="numTimesToRun">The total number of times the course should be scheduled, or, the length of the combination</param>
         /// <returns></returns>
-        public List<List<OptimizerResult>> BuildCombinations(List<OptimizerResult> Entities, List<OptimizerResult> MyCombo, int NumTimesToRun, int IndexOfLastAdded)
+        public List<List<OptimizerResult>> BuildCombinations(List<OptimizerResult> Entities, List<OptimizerResult> MyCombo, int MaxComboSize, int IndexOfLastAdded)
         {
             var MyComboCollection = new List<List<OptimizerResult>>();
 
             if (Entities.Count <= 0)
+            {
                 return MyComboCollection;
+            }
 
             // Base Case
-            if (MyCombo.Count >= NumTimesToRun || MyCombo.Count >= Entities.Count || MyCombo.Count >= TotalWeekDays)
+            if (MyCombo.Count >= MaxComboSize || MyCombo.Count >= Entities.Count)
             {
                 MyComboCollection.Add(MyCombo);
             }
@@ -459,7 +510,7 @@ namespace OptimizerEngine.Services
                             {
                                 var MyComboCopy = OptimizerUtilities.DeepClone(MyCombo);
                                 MyComboCopy.Add(Entities[i]);
-                                MyComboCollection.AddRange(BuildCombinations(Entities, MyComboCopy, NumTimesToRun, i));
+                                MyComboCollection.AddRange(BuildCombinations(Entities, MyComboCopy, MaxComboSize, i));
                             }
                         }
                     }
@@ -467,33 +518,19 @@ namespace OptimizerEngine.Services
                     {
                         var MyComboCopy = OptimizerUtilities.DeepClone(MyCombo);
                         MyComboCopy.Add(Entities[i]);
-                        MyComboCollection.AddRange(BuildCombinations(Entities, MyComboCopy, NumTimesToRun, i));
+                        MyComboCollection.AddRange(BuildCombinations(Entities, MyComboCopy, MaxComboSize, i));
                     }
                 }
             }
             return MyComboCollection;
         }
 
-        private OptimizerScheduleResults SelectMostScheduled(List<OptimizerScheduleResults> subNodeAnswers)
+        private OptimizerScheduleResults SelectBestAnswer(List<OptimizerScheduleResults> subNodeAnswers)
         {
-            var max = 0;
-            var bestAnswer = new OptimizerScheduleResults
-            {
-                Results = new List<OptimizerResult>(),
-                Inputs = new List<OptimizerInput>(),
-                OptimizationScore = 0
-            };
-            foreach(var answer in subNodeAnswers)
-            {
-                if (answer.Results.Count == 0) continue;
-                if (answer.Results.Count > max)
-                {
-                    max = answer.Results.Count;
-                    bestAnswer = answer;
-                }
-            }
-            bestAnswer.OptimizationScore = max;
-            return bestAnswer;
+            var MostSuccessfullyScheduled = subNodeAnswers.Max( x => x.Results.Count);
+            var AnswersWithHighestSuccessfullyScheduled = subNodeAnswers.Where(x => x.Results.Count == MostSuccessfullyScheduled);
+
+            return AnswersWithHighestSuccessfullyScheduled.First();
         }
 
         /// <summary>
@@ -540,6 +577,13 @@ namespace OptimizerEngine.Services
                         ReleaseRateSatisfied = false;
                         break;
                     }
+
+                    // If a course with the same code is being taught, then do not include
+                    // This is to avoid having two of the same course at the same time
+                    //if ()
+                    //{
+
+                    //}
                 }
                 // Add this day to valid start dates if the whole range was satisfied
                 if (ReleaseRateSatisfied)
