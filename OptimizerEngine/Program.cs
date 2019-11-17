@@ -17,7 +17,7 @@ namespace LSS
             Priority priority = Priority.Default;
 
             DateTime StartDate = Convert.ToDateTime("1/1/2020");
-            DateTime EndDate = Convert.ToDateTime("3/31/2020");
+            DateTime EndDate = Convert.ToDateTime("1/31/2020");
 
             if (askForInput)
             {

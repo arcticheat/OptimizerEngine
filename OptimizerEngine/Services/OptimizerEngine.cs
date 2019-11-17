@@ -6,6 +6,8 @@ using System.Linq;
 using Microsoft.EntityFrameworkCore;
 using System.Text;
 using MoreLinq;
+using System.Threading;
+using System.Threading.Tasks;
 
 namespace LSS.Services
 {
@@ -39,6 +41,12 @@ namespace LSS.Services
         private bool ABestAnswerFound = false;
         public int BestPossibleScore;
         public List<OptimizerInput> WillAlwaysFail = new List<OptimizerInput>();
+        Task<OptimizerScheduleResults> resultsTask;
+        Task<Dictionary<int, Dictionary<string, int>>> crTask;
+        Task<Dictionary<string, Dictionary<string, bool>>> iiuTask;
+        Task<Dictionary<int, Dictionary<string, bool>>> iruTask;
+        Task<Dictionary<int, Dictionary<string, List<int>>>> ltcpdTask;
+        Task<OptimizerScheduleResults> recursionTask;
 
         /// <summary>
         /// The optimizer will calculate a single collection of optimizer results created from the optimizer input
@@ -227,7 +235,7 @@ namespace LSS.Services
             if (ShowDebugMessages) Console.WriteLine("Optimization Complete.\n");
         }
 
-        internal OptimizerScheduleResults OptimizeRecursion(OptimizerScheduleResults IncomingResults, int InputIndex,
+        internal async Task<OptimizerScheduleResults> OptimizeRecursionAsync(OptimizerScheduleResults IncomingResults, int InputIndex,
             Dictionary<string, Dictionary<string, bool>> IsInstructorUnavailable, Dictionary<int, Dictionary<string, bool>> IsRoomUnavailable,
             Dictionary<int, Dictionary<string, int>> CurrentlyReleased,
             Dictionary<int, Dictionary<string, List<int>>> LocallyTaughtCoursesPerDay,
@@ -286,6 +294,9 @@ namespace LSS.Services
 
                 // Loop through each day within the optimizer range that the course could start on
                 var lastDate = ValidStartDates.LastOrDefault();
+
+                // Tasks for multithreading
+
 
                 foreach (var ValidStartDate in ValidStartDates)
                 {
@@ -356,14 +367,22 @@ namespace LSS.Services
 
                                     // TO DO MULTITHREADING
                                     // Deep copy the current results so this child node will have a unique result object to build from
-                                    var MyResults = OptimizerUtilities.DeepClone(IncomingResults);
+                                    resultsTask = OptimizerUtilities.DeepClone(IncomingResults);
                                     // Copy all the unavailability data trackers to update them for this recursion
-                                    var CRCopy = OptimizerUtilities.DeepClone(CurrentlyReleased);
-                                    var IIUCopy = OptimizerUtilities.DeepClone(IsInstructorUnavailable);
-                                    var IRUCopy = OptimizerUtilities.DeepClone(IsRoomUnavailable);
-                                    var LTCPDCopy = OptimizerUtilities.DeepClone(LocallyTaughtCoursesPerDay);
+                                    crTask = OptimizerUtilities.DeepClone(CurrentlyReleased);
+                                    iiuTask = OptimizerUtilities.DeepClone(IsInstructorUnavailable);
+                                    iruTask = OptimizerUtilities.DeepClone(IsRoomUnavailable);
+                                    ltcpdTask = OptimizerUtilities.DeepClone(LocallyTaughtCoursesPerDay);
+
+                                    await Task.WhenAll(resultsTask, crTask, iiuTask, iruTask, ltcpdTask);
+                                    var MyResults = resultsTask.Result;
+                                    var CRCopy = crTask.Result;
+                                    var IIUCopy = iiuTask.Result;
+                                    var IRUCopy = iruTask.Result;
+                                    var LTCPDCopy = ltcpdTask.Result;
 
                                     NodesPerDepth[CurrentDepth] += 1;
+
 
                                     //update the data container copies with the scheduling info for this result
                                     UpdateMatrices(Result.StartDate, Result.EndDate, CurrentInput.LocationIdLiteral, MaxClassSize, Result.InstrUsername, Result.RoomID, Result.UsingLocalInstructor,
@@ -377,12 +396,16 @@ namespace LSS.Services
                                     // repeat this index if there are more times to run
                                     if (MyResults.Inputs[InputIndex].RemainingRuns > 0)
                                     {
-                                        SubNodeAnswers.Add(OptimizeRecursion(MyResults, InputIndex, IIUCopy, IRUCopy, CRCopy, LTCPDCopy, CurrentDepth + 1));
+                                        recursionTask = OptimizeRecursionAsync(MyResults, InputIndex, IIUCopy, IRUCopy, CRCopy, LTCPDCopy, CurrentDepth + 1);
+                                        await recursionTask;
+                                        SubNodeAnswers.Add(recursionTask.Result);
                                     }
                                     else
                                     {
                                         MyResults.Inputs[InputIndex].Succeeded = true;
-                                        SubNodeAnswers.Add(OptimizeRecursion(MyResults, InputIndex + 1, IIUCopy, IRUCopy, CRCopy, LTCPDCopy, CurrentDepth + 1));
+                                        recursionTask = OptimizeRecursionAsync(MyResults, InputIndex + 1, IIUCopy, IRUCopy, CRCopy, LTCPDCopy, CurrentDepth + 1);
+                                        await recursionTask;
+                                        SubNodeAnswers.Add(recursionTask.Result);
                                     }
                                     // Always check if the best answer is already found
                                     if (IsABestAnswerFound())
@@ -397,9 +420,20 @@ namespace LSS.Services
 
                 // Must always consider what would happen if this input is not scheduled
                 // TO DO MULTITHREADING
+                // Deep copy the current results so this child node will have a unique result object to build from
+                resultsTask = OptimizerUtilities.DeepClone(IncomingResults);
+                // Copy all the unavailability data trackers to update them for this recursion
+                crTask = OptimizerUtilities.DeepClone(CurrentlyReleased);
+                iiuTask = OptimizerUtilities.DeepClone(IsInstructorUnavailable);
+                iruTask = OptimizerUtilities.DeepClone(IsRoomUnavailable);
+                ltcpdTask = OptimizerUtilities.DeepClone(LocallyTaughtCoursesPerDay);
 
-                var ResultsNotScheduled = OptimizerUtilities.DeepClone(IncomingResults);
-                ResultsNotScheduled.Inputs[InputIndex].Succeeded = false;
+                //await Task.WhenAll(resultsTask, crTask, iiuTask, iruTask, ltcpdTask);
+                var ResultsNotScheduled = resultsTask.Result;
+                var CRCopy_skip = crTask.Result;
+                var IIUCopy_skip = iiuTask.Result;
+                var IRUCopy_skip = iruTask.Result;
+                var LTCPDCopy_skip = ltcpdTask.Result;
 
                 // Always consider not scheduling this course
                 //If there is a reason to skip, set it
@@ -418,16 +452,12 @@ namespace LSS.Services
                 else
                     ResultsNotScheduled.Inputs[InputIndex].Reason = "Skipped";
 
-                // TO DO MULTITHREADING
-                // Copy all the unavailability data trackers to update them for this recursion
-                var CRCopy_skip = OptimizerUtilities.DeepClone(CurrentlyReleased);
-                var IIUCopy_skip = OptimizerUtilities.DeepClone(IsInstructorUnavailable);
-                var IRUCopy_skip = OptimizerUtilities.DeepClone(IsRoomUnavailable);
-                var LTCPDCopy_skip = OptimizerUtilities.DeepClone(LocallyTaughtCoursesPerDay);
-
                 // Recursion on skipping this input
-                SubNodeAnswers.Add(OptimizeRecursion(ResultsNotScheduled, InputIndex + 1, IIUCopy_skip, IRUCopy_skip,
-                    CRCopy_skip, LTCPDCopy_skip, CurrentDepth + CurrentInput.RemainingRuns));
+                recursionTask = OptimizeRecursionAsync(ResultsNotScheduled, InputIndex + 1, IIUCopy_skip, IRUCopy_skip,
+                    CRCopy_skip, LTCPDCopy_skip, CurrentDepth + CurrentInput.RemainingRuns);
+                await recursionTask;
+                SubNodeAnswers.Add(recursionTask.Result);
+
 
                 // Always check if the best answer is already found
                 if (IsABestAnswerFound())
@@ -468,6 +498,22 @@ namespace LSS.Services
                     CurrentInput.Reason = reason;
                     WillAlwaysFail.Add(CurrentInput);
                     if (ShowDebugMessages) Console.WriteLine($"Impossible: {reason}");
+                }
+                else
+                {
+                    // Determine how many possible iterations could be fit into this date range for this course
+                    // Used for bounding
+                    var NonOverLappingStartDates = 0;
+                    var CurrentDate = ValidStartDates.First();
+                    while (CurrentDate <= ValidStartDates.Last())
+                    {
+                        NonOverLappingStartDates++;
+                        CurrentDate = Utilities.getNextBusinessDate(CurrentDate, CurrentInput.LengthDays);
+                        if (NonOverLappingStartDates >= CurrentInput.NumTimesToRun)
+                            break;
+                    }
+                    CurrentInput.MaxPossibleIterations = NonOverLappingStartDates;
+                    CurrentInput.RemainingRuns = CurrentInput.MaxPossibleIterations;
                 }
 
                 // Loop through each day within the optimizer range that the course could start on
@@ -531,6 +577,10 @@ namespace LSS.Services
             }
             // Remove the objects that will always fail from the input
             WillAlwaysFail.ForEach(x => Inputs.Remove(x));
+
+            // Sort Inputs by Remaining inputs
+            Inputs = Inputs.OrderByDescending(x => x.MaxPossibleIterations).ToList();
+
         }
 
         private void CalculateScore(OptimizerScheduleResults incomingResults)
@@ -563,12 +613,10 @@ namespace LSS.Services
                     case (Priority.MinimizeForeignInstructorCount):
                         if (incomingResults.OptimizationScore < CurrentBestAnswer.OptimizationScore)
                         {
-                            Console.WriteLine("new best found");
                             CurrentBestAnswer = incomingResults;
                         }
                         if (incomingResults.OptimizationScore <= BestPossibleScore)
                         {
-                            Console.WriteLine("best is set!");
                             ABestAnswerFound = true;
                         }
                         break;
@@ -603,7 +651,6 @@ namespace LSS.Services
                 if (NodesPerDepth[i] == 0)
                     status += $"Level {i + 1}: Node Count ?\n";
                 else
-                if (NodesPerDepth[i] != 0)
                     status += $"Level {i + 1}: Node Count {NodesPerDepth[i]}\n";
             }
             status += "--------------------------------------|";

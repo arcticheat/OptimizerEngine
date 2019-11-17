@@ -99,7 +99,7 @@ namespace LSS.Services
             if (ShowDebugMessages)
             {
                 Console.WriteLine("Optimizer Inputs");
-                ConsoleTable.From<OptimizerInput>(Engine.Inputs).Write(Format.MarkDown);
+                ConsoleTable.From<OptimizerInputPrintable>(Engine.Inputs.Select(x => new OptimizerInputPrintable(x))).Write(Format.MarkDown);
                 Console.WriteLine("");
             }
 
@@ -331,7 +331,7 @@ namespace LSS.Services
             };
             Engine.InputCount = Engine.Inputs.Count;
             var Levels = 0;
-            Engine.Inputs.ForEach(x => Levels += x.NumTimesToRun);
+            Engine.Inputs.ForEach(x => Levels += Math.Min(x.MaxPossibleIterations, x.NumTimesToRun));
             Engine.NodesPerDepth = new int[Levels];
             if (ShowDebugMessages) Console.WriteLine("Done.\n");
 

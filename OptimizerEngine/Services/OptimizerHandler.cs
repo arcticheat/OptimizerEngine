@@ -4,6 +4,7 @@ using System;
 using System.Collections.Generic;
 using System.Text;
 using System.Threading;
+using System.Threading.Tasks;
 
 namespace LSS.Services
 {
@@ -71,14 +72,19 @@ namespace LSS.Services
             }
         }
 
-        void Optimize()
+        async void Optimize()
         {
             if (MyEngine.MyPriority == Priority.FirstAvailable)
                 MyEngine.OptimizeGreedy(MyBuilder.IsRoomUnavailable, MyBuilder.IsInstructorUnavailable,
                     MyBuilder.CurrentlyReleased, MyBuilder.LocallyTaughtCoursesPerDay);
             else
-                MyResults = MyEngine.OptimizeRecursion(MyBuilder.StartingResults, 0, MyBuilder.IsInstructorUnavailable,
+            {
+                Task<OptimizerScheduleResults> resultThread = MyEngine.OptimizeRecursionAsync(MyBuilder.StartingResults, 0, MyBuilder.IsInstructorUnavailable,
                     MyBuilder.IsRoomUnavailable, MyBuilder.CurrentlyReleased, MyBuilder.LocallyTaughtCoursesPerDay, 0);
+                await resultThread;
+                MyResults = resultThread.Result;
+            }
+                
             ThreadInProgress = false;
             return;
         }

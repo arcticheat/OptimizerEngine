@@ -5,6 +5,7 @@ using System.IO;
 using System.Linq;
 using System.Runtime.Serialization.Formatters.Binary;
 using System.Text;
+using System.Threading.Tasks;
 
 namespace LSS.Services
 {
@@ -163,7 +164,7 @@ namespace LSS.Services
                 output += '\n';
             }
         }
-        public static T DeepClone<T>(T obj)
+        public async static Task<T> DeepClone<T>(T obj)
         {
             using (var ms = new MemoryStream())
             {

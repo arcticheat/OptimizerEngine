@@ -25,6 +25,8 @@ namespace LSS.Models
         public int LocationIdLiteral { get; set; }
         [NotMapped]
         public int RemainingRuns { get; set; }
+        [NotMapped]
+        public int MaxPossibleIterations { get; set; }
 
     }
 }
