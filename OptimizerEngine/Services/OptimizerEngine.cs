@@ -615,60 +615,6 @@ namespace LSS.Services
             return ABestAnswerFound;
         }
 
-        /// <summary>
-        /// Builds all possible combinations of optimizer results for an input that must run more than once
-        /// </summary>
-        /// <param name="possibleScheduling">Reference to the list of possible schedulings for this class input</param>
-        /// <param name="myCombination">The combination of class schedulings that is being recursively being built</param>
-        /// <param name="Index">The current index to check the list of possible scheduling</param>
-        /// <param name="numTimesToRun">The total number of times the course should be scheduled, or, the length of the combination</param>
-        /// <returns></returns>
-        public List<List<OptimizerResult>> BuildCombinations(List<OptimizerResult> Entities, List<OptimizerResult> MyCombo, int MaxComboSize, int IndexOfLastAdded)
-        {
-            var MyComboCollection = new List<List<OptimizerResult>>();
-
-            if (Entities.Count <= 0)
-            {
-                return MyComboCollection;
-            }
-
-            // Base Case
-            if (MyCombo.Count >= MaxComboSize || MyCombo.Count >= Entities.Count)
-            {
-                MyComboCollection.Add(MyCombo);
-            }
-            //Recursion 
-            else
-            {
-                // Loop through every possible result after the last one
-                for(var i = IndexOfLastAdded + 1; i < Entities.Count; i++)
-                {
-                    // If there are previous results in the combo to check for conflicts
-                    if (MyCombo.Count > 0)
-                    {
-                        // Check every current result in the combo
-                        foreach(var ResultInCombo in MyCombo)
-                        {
-                            // Make sure that the possible result isn't at the same time as an existing result of the combo 
-                            if (ResultInCombo.StartDate != Entities[i].StartDate)
-                            {
-                                var MyComboCopy = OptimizerUtilities.DeepClone(MyCombo);
-                                MyComboCopy.Add(Entities[i]);
-                                MyComboCollection.AddRange(BuildCombinations(Entities, MyComboCopy, MaxComboSize, i));
-                            }
-                        }
-                    }
-                    else
-                    {
-                        var MyComboCopy = OptimizerUtilities.DeepClone(MyCombo);
-                        MyComboCopy.Add(Entities[i]);
-                        MyComboCollection.AddRange(BuildCombinations(Entities, MyComboCopy, MaxComboSize, i));
-                    }
-                }
-            }
-            return MyComboCollection;
-        }
-
         private OptimizerScheduleResults SelectBestAnswer(List<OptimizerScheduleResults> subNodeAnswers)
         {
             var MostSuccessfullyScheduled = subNodeAnswers.Max( x => x.Results.Count);
