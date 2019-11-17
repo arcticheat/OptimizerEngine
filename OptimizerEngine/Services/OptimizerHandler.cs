@@ -15,7 +15,7 @@ namespace LSS.Services
         private OptimizerScheduleResults MyResults;
         private bool ThreadInProgress;
         private DatabaseContext context;
-
+        
         public OptimizerHandler(DatabaseContext _context, OptimizerEngineBuilder builder)
         {
             MyBuilder = builder;
@@ -26,6 +26,12 @@ namespace LSS.Services
         public void Run()
         {
             MyEngine = MyBuilder.Build();
+
+            Console.WriteLine("Please review the data the optimizer engine will be using above.\nPress Enter when ready to proceed.");
+            do
+            {
+
+            } while (Console.ReadKey().Key != ConsoleKey.Enter);
 
             var watch = new System.Diagnostics.Stopwatch();
             if (ShowDebugMessages) watch = System.Diagnostics.Stopwatch.StartNew();
@@ -67,13 +73,12 @@ namespace LSS.Services
 
         void Optimize()
         {
-            var optimizerScheduleResults = new OptimizerScheduleResults
-            {
-                Inputs = MyEngine.Inputs,
-                Results = new List<OptimizerResult>()
-            };
-            MyResults = MyEngine.OptimizeRecursion(optimizerScheduleResults, 0, MyBuilder.IsInstructorUnavailable,
-                MyBuilder.IsRoomUnavailable, MyBuilder.CurrentlyReleased, MyBuilder.LocallyTaughtCoursesPerDay, 0);
+            if (MyEngine.MyPriority == Priority.FirstAvailable)
+                MyEngine.OptimizeGreedy(MyBuilder.IsRoomUnavailable, MyBuilder.IsInstructorUnavailable,
+                    MyBuilder.CurrentlyReleased, MyBuilder.LocallyTaughtCoursesPerDay);
+            else
+                MyResults = MyEngine.OptimizeRecursion(MyBuilder.StartingResults, 0, MyBuilder.IsInstructorUnavailable,
+                    MyBuilder.IsRoomUnavailable, MyBuilder.CurrentlyReleased, MyBuilder.LocallyTaughtCoursesPerDay, 0);
             ThreadInProgress = false;
             return;
         }

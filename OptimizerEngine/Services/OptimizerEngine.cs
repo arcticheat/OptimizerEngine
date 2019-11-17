@@ -9,6 +9,11 @@ using MoreLinq;
 
 namespace LSS.Services
 {
+    public enum Priority
+    {
+        Default, MinimizeForeignInstructorCount, MinimizeInstructorTravelDistance, MaximizeSpecializedInstructors,
+        MaximizeInstructorLongestToTeach, FirstAvailable
+    }
     public class OptimizerEngine
     {
         public List<OptimizerInput> Inputs;
@@ -26,11 +31,14 @@ namespace LSS.Services
         public int InputCount;
         public DatabaseContext context;
         public OptimizerScheduleResults CurrentBestAnswer;
-        private int TotalSchedulesCreated = -1;
-        private int NonEndNodesThatReturned = -1;
+        private int TotalSchedulesCreated = 0;
+        private int NonEndNodesThatReturned = 0;
         public int TotalWeekDays;
         public int[] NodesPerDepth;
-        private int RepeatIndexCount = 0;
+        public Priority MyPriority;
+        private bool ABestAnswerFound = false;
+        public int BestPossibleScore;
+        public List<OptimizerInput> WillAlwaysFail = new List<OptimizerInput>();
 
         /// <summary>
         /// The optimizer will calculate a single collection of optimizer results created from the optimizer input
@@ -55,13 +63,13 @@ namespace LSS.Services
                 // Obtain the information about this course in the catalog
                 var CourseInfo = CourseCatalog.Where(course => course.ID == CurrentInput.CourseId).First();
 
+                var reason = "";
                 // Obtain all possible start dates (restricted by location release rate and course length)
                 var ValidStartDates = FindValidStartDates(CurrentInput.LocationIdLiteral, CurrentInput.LengthDays, MaxClassSize, ReleaseRate,
-                    (int)CourseInfo.ID, ref CurrentlyReleased, ref LocallyTaughtCoursesPerDay);
+                    (int)CourseInfo.ID, ref CurrentlyReleased, ref LocallyTaughtCoursesPerDay, ref reason);
                 if (ValidStartDates.Count <= 0)
                 {
-                    if (ShowDebugMessages) Console.WriteLine($"The input could not be scheduled because the location {CurrentInput.LocationID} would exceed its release rate.\n");
-                    CurrentInput.Reason = "Release rate would be exceeded.";
+                    CurrentInput.Reason = reason;
                 }
 
                 // Counter to keep track of inputs that need multiple iterations scheduled 
@@ -81,7 +89,7 @@ namespace LSS.Services
 
                     if (ShowDebugMessages) Console.WriteLine($"Searching on the start date {ValidStartDate.ToString(TIME_FORMAT)} for an instructor and room.");
                     // Set the end date for this range based off of the course length
-                    var ValidEndDate = ValidStartDate.AddDays(CurrentInput.LengthDays - 1);
+                    var ValidEndDate = Utilities.getNextBusinessDate(ValidStartDate, CurrentInput.LengthDays - 1);
 
                     // Loop through all qualified instructors for this course
                     foreach (var Instructor in CourseInfo.QualifiedInstructors)
@@ -144,7 +152,7 @@ namespace LSS.Services
                     Result.StartTime = CurrentInput.StartTime;
                     Result.EndTime = CurrentInput.StartTime.Add(new TimeSpan(Math.Min(8, CourseInfo.Hours), 0, 0));
                     Result.StartDate = ValidStartDate;
-                    Result.EndDate = ValidStartDate.AddDays(CurrentInput.LengthDays - 1);
+                    Result.EndDate = ValidEndDate;
                     Result.RequestType = "Optimizer";
                     Result.Requester = "Optimizer";
                     Result.Hidden = true;
@@ -155,7 +163,7 @@ namespace LSS.Services
                     if (ShowDebugMessages)
                     {
                         Console.WriteLine($"The course will be scheduled from {ValidStartDate.ToString(TIME_FORMAT)}" +
-                        $" to {ValidStartDate.AddDays(CurrentInput.LengthDays - 1).ToString(TIME_FORMAT)}  with the room and instructor listed above.");
+                        $" to {ValidEndDate.ToString(TIME_FORMAT)}  with the room and instructor listed above.");
                         Console.WriteLine();
                     }
 
@@ -171,7 +179,10 @@ namespace LSS.Services
                             if (ShowDebugMessages) Console.WriteLine("This input is required to be schedule again, but no more days are available.\n");
                         }
                         else
+                        {
+                            
                             if (ShowDebugMessages) Console.WriteLine("This input is required to be scheduled again. Continuing from next valid start date...");
+                        }
                     }
                     // Otherwise, continue to the next input
                     else
@@ -205,6 +216,10 @@ namespace LSS.Services
             {
                 context.Entry(input).State = input.Id == 0 ? EntityState.Added : EntityState.Modified;
             }
+            foreach(var input in WillAlwaysFail)
+            {
+                context.Entry(input).State = input.Id == 0 ? EntityState.Added : EntityState.Modified;
+            }
             // Save data to the context
             context.SaveChanges();
             
@@ -224,27 +239,27 @@ namespace LSS.Services
                 return CurrentBestAnswer;
             }
 
+            // Predict if a better answer is even possible from here
+            // First see if adding every single remaining class for the remainder of this branch would 
+            // create a result with more successful resutls than the best
+            if (NodesPerDepth.Length - CurrentDepth + IncomingResults.Results.Count <= CurrentBestAnswer.Results.Count)
+            {
+                // This branch cannot possibly come up with a better answer than what is already found
+                return CurrentBestAnswer;
+            }
+
             // base case if there are no more inputs
             if (InputIndex >= InputCount)
             {
                 // calculate score
-                IncomingResults.OptimizationScore = IncomingResults.Results.Count;
-                // this answer has all the values, return
+                CalculateScore(IncomingResults);
+                // this answer has all its values, return
                 TotalSchedulesCreated++;
                 return IncomingResults;
             }
             // recursion
             else
             {
-                // Predict if a better answer is even possible from here
-                // First see if adding every single remaining class for the remainder of this branch would 
-                // create a result with more successful resutls than the best
-                if (NodesPerDepth.Length - CurrentDepth + IncomingResults.Results.Count <= CurrentBestAnswer.Results.Count)
-                {
-                    // This branch cannot possibly come up with a better answer than what is already found
-                    return CurrentBestAnswer;
-                }
-
                 // Obtain the current input information for reference
                 var CurrentInput = IncomingResults.Inputs[InputIndex];
 
@@ -252,7 +267,7 @@ namespace LSS.Services
                 var PossibleSchedulingsForInput = new List<OptimizerResult>();
 
                 // flags to determine possible reason for failure
-                bool NoInstructor = true, NoRoom = true, ExceededReleaseRate = true;
+                bool NoInstructor = true, NoRoom = true, NoValidStartDates = true;
 
                 // Obtain the class max size and the location release rate for the function call to find the valid start dates
                 var MaxClassSize = CourseCatalog.Where(course => course.ID == CurrentInput.CourseId).First().MaxSize;
@@ -262,8 +277,9 @@ namespace LSS.Services
                 var CourseInfo = CourseCatalog.Where(course => course.ID == CurrentInput.CourseId).First();
 
                 // Obtain all possible start dates (restricted by location release rate and course length)
+                var reason = "";
                 var ValidStartDates = FindValidStartDates(CurrentInput.LocationIdLiteral, CurrentInput.LengthDays, MaxClassSize, ReleaseRate,
-                    (int)CourseInfo.ID, ref CurrentlyReleased, ref LocallyTaughtCoursesPerDay);
+                    (int)CourseInfo.ID, ref CurrentlyReleased, ref LocallyTaughtCoursesPerDay, ref reason);
 
                 // Container to hold every child node's answer
                 var SubNodeAnswers = new List<OptimizerScheduleResults>();
@@ -273,13 +289,31 @@ namespace LSS.Services
 
                 foreach (var ValidStartDate in ValidStartDates)
                 {
-
-                    ExceededReleaseRate = false;
+                    NoValidStartDates = false;
                     // Set the end date for this range based off of the course length
-                    var ValidEndDate = ValidStartDate.AddDays(CurrentInput.LengthDays - 1);
+                    var ValidEndDate = Utilities.getNextBusinessDate(ValidStartDate, CurrentInput.LengthDays - 1);
+
+                    // Sort the instructors by the instructors to find the best answer sooner
+                    var SortedQualifiedInstructors = new List<string>();
+                    switch (MyPriority)
+                    {
+                        case Priority.MaximizeInstructorLongestToTeach:
+                            break;
+                        case (Priority.MaximizeSpecializedInstructors):
+                            break;
+                        case (Priority.MinimizeForeignInstructorCount):
+                            SortedQualifiedInstructors = CourseInfo.QualifiedInstructors.
+                                OrderByDescending(x => Locations.First(y => y.ID == CurrentInput.LocationIdLiteral).LocalInstructors.Contains(x)).ToList();
+                            break;
+                        case (Priority.MinimizeInstructorTravelDistance):
+                            break;
+                        default:
+                            SortedQualifiedInstructors = CourseInfo.QualifiedInstructors;
+                            break;
+                    }
 
                     // Loop through all qualified instructors for this course
-                    foreach (var Instructor in CourseInfo.QualifiedInstructors)
+                    foreach (var Instructor in SortedQualifiedInstructors)
                     {
                         // Determine if this instructor is available for the range
                         if (IsInstructorAvailableForDateRange(Instructor, ValidStartDate, ValidEndDate, IsInstructorUnavailable))
@@ -300,14 +334,14 @@ namespace LSS.Services
                                     // Found an answer so set the remaining fields for the result
                                     // result object for this input
                                     var Result = new OptimizerResult
-                                    {
+                                    { 
                                         CourseID = CurrentInput.CourseId,
                                         LocationID = Locations.Where(Loc => Loc.Code == CurrentInput.LocationID).First().ID,
                                         Cancelled = false,
                                         StartTime = CurrentInput.StartTime,
                                         EndTime = CurrentInput.StartTime.Add(new TimeSpan(Math.Min(8, CourseInfo.Hours), 0, 0)),
                                         StartDate = ValidStartDate,
-                                        EndDate = ValidStartDate.AddDays(CurrentInput.LengthDays - 1),
+                                        EndDate = ValidEndDate,
                                         RequestType = "Optimizer",
                                         Requester = "Optimizer",
                                         Hidden = true,
@@ -316,12 +350,13 @@ namespace LSS.Services
                                         CourseCode = CurrentInput.CourseCode,
                                         RoomID = RoomID,
                                         InstrUsername = Instructor,
-                                        UsingLocalInstructor = Instructors.Where(instr => instr.Username == Instructor).First().PointID == CurrentInput.LocationIdLiteral
+                                        UsingLocalInstructor = Instructors.Where(instr => instr.Username == Instructor).First().PointID == CurrentInput.LocationIdLiteral,
+                                        inputID = CurrentInput.Id
                                     };
 
+                                    // TO DO MULTITHREADING
                                     // Deep copy the current results so this child node will have a unique result object to build from
                                     var MyResults = OptimizerUtilities.DeepClone(IncomingResults);
-
                                     // Copy all the unavailability data trackers to update them for this recursion
                                     var CRCopy = OptimizerUtilities.DeepClone(CurrentlyReleased);
                                     var IIUCopy = OptimizerUtilities.DeepClone(IsInstructorUnavailable);
@@ -359,25 +394,31 @@ namespace LSS.Services
                         }
                     }
                 }
-                    
+
                 // Must always consider what would happen if this input is not scheduled
+                // TO DO MULTITHREADING
+
                 var ResultsNotScheduled = OptimizerUtilities.DeepClone(IncomingResults);
                 ResultsNotScheduled.Inputs[InputIndex].Succeeded = false;
 
                 // Always consider not scheduling this course
                 //If there is a reason to skip, set it
-                if (ExceededReleaseRate)
-                    ResultsNotScheduled.Inputs[InputIndex].Reason = "No valid start date";
+                if (NoValidStartDates)
+                    ResultsNotScheduled.Inputs[InputIndex].Reason = reason;
                 else if (NoInstructor)
                     ResultsNotScheduled.Inputs[InputIndex].Reason = "No instructor is available";
                 else if (NoRoom)
                     ResultsNotScheduled.Inputs[InputIndex].Reason = "No room is available";
                 else if (CurrentInput.RemainingRuns > 0)
+                {
                     ResultsNotScheduled.Inputs[InputIndex].Reason = $"Only scheduled {CurrentInput.NumTimesToRun - CurrentInput.RemainingRuns}" +
                         $" out of {CurrentInput.NumTimesToRun}";
+                    ResultsNotScheduled.Inputs[InputIndex].NumTimesToRun = CurrentInput.RemainingRuns;
+                }
                 else
                     ResultsNotScheduled.Inputs[InputIndex].Reason = "Skipped";
 
+                // TO DO MULTITHREADING
                 // Copy all the unavailability data trackers to update them for this recursion
                 var CRCopy_skip = OptimizerUtilities.DeepClone(CurrentlyReleased);
                 var IIUCopy_skip = OptimizerUtilities.DeepClone(IsInstructorUnavailable);
@@ -385,7 +426,8 @@ namespace LSS.Services
                 var LTCPDCopy_skip = OptimizerUtilities.DeepClone(LocallyTaughtCoursesPerDay);
 
                 // Recursion on skipping this input
-                SubNodeAnswers.Add(OptimizeRecursion(ResultsNotScheduled, InputIndex + 1, IIUCopy_skip, IRUCopy_skip, CRCopy_skip, LTCPDCopy_skip, CurrentDepth + 1));
+                SubNodeAnswers.Add(OptimizeRecursion(ResultsNotScheduled, InputIndex + 1, IIUCopy_skip, IRUCopy_skip,
+                    CRCopy_skip, LTCPDCopy_skip, CurrentDepth + CurrentInput.RemainingRuns));
 
                 // Always check if the best answer is already found
                 if (IsABestAnswerFound())
@@ -396,10 +438,149 @@ namespace LSS.Services
                 // Pick best answer
                 var bestAnswer = SelectBestAnswer(SubNodeAnswers);
                 NonEndNodesThatReturned++;
-                if (bestAnswer.OptimizationScore > CurrentBestAnswer.OptimizationScore)
-                    CurrentBestAnswer = bestAnswer;
+
                 return bestAnswer;
             }   
+        }
+
+        internal void PrimeStartingResults(ref Dictionary<int, Dictionary<string, bool>> isRoomUnavailable, 
+            ref Dictionary<string, Dictionary<string, bool>> isInstructorUnavailable, ref Dictionary<int, Dictionary<string, int>> currentlyReleased,
+            ref Dictionary<int, Dictionary<string, List<int>>> locallyTaughtCoursesPerDay)
+        {
+            // Loop through each input from the optimizer
+            foreach (var CurrentInput in Inputs)
+            {
+                if (ShowDebugMessages) Console.Write($"Checking possibility for input {CurrentInput.Id}... ");
+
+                // Obtain the class max size and the location release rate for the function call to find the valid start dates
+                var MaxClassSize = CourseCatalog.Where(course => course.ID == CurrentInput.CourseId).First().MaxSize;
+                var ReleaseRate = Locations.Where(location => location.ID == CurrentInput.LocationIdLiteral).First().ReleaseRate;
+
+                // Obtain the information about this course in the catalog
+                var CourseInfo = CourseCatalog.Where(course => course.ID == CurrentInput.CourseId).First();
+
+                // Obtain all possible start dates (restricted by location release rate and course length)
+                var reason = "";
+                var ValidStartDates = FindValidStartDates(CurrentInput.LocationIdLiteral, CurrentInput.LengthDays, MaxClassSize, ReleaseRate,
+                    (int)CourseInfo.ID, ref currentlyReleased, ref locallyTaughtCoursesPerDay, ref reason);
+                if (ValidStartDates.Count <= 0)
+                {
+                    CurrentInput.Reason = reason;
+                    WillAlwaysFail.Add(CurrentInput);
+                    if (ShowDebugMessages) Console.WriteLine($"Impossible: {reason}");
+                }
+
+                // Loop through each day within the optimizer range that the course could start on
+                var lastDate = ValidStartDates.LastOrDefault();
+                foreach (var ValidStartDate in ValidStartDates)
+                {
+                    // Set the end date for this range based off of the course length
+                    var ValidEndDate = Utilities.getNextBusinessDate(ValidStartDate, CurrentInput.LengthDays - 1);
+
+                    // Loop through all qualified instructors for this course
+                    bool InstructorIsAvailable = false;
+                    foreach (var Instructor in CourseInfo.QualifiedInstructors)
+                    {
+                        // Determine if this instructor is available for the range
+                        if (IsInstructorAvailableForDateRange(Instructor, ValidStartDate, ValidEndDate, isInstructorUnavailable))
+                        {
+                            // If an instructor is available continue
+                            InstructorIsAvailable = true;
+                            break;
+                        }
+                    }
+                    // If no instructor is available and there are no more valid start dates, this input will always fail
+                    if (!InstructorIsAvailable && ValidStartDate == lastDate)
+                    {
+                        // This input can never be scheduled because no instructor is available without any other inputs being scheduled
+                        CurrentInput.Reason = "No instructor is available.";
+                        WillAlwaysFail.Add(CurrentInput);
+                        if (ShowDebugMessages) Console.WriteLine($"Impossible: {CurrentInput.Reason}");
+                        break;
+                    }
+
+                    // Loop through all local rooms for this location
+                    // but only the rooms that have the right type and quantity of resources required by this course type
+                    var RoomIsAvailable = false;
+                    foreach (var RoomID in Locations.Where(Loc => Loc.Code == CurrentInput.LocationID).First().
+                        LocalRooms.Where(room => CourseInfo.RequiredResources.All(required =>
+                        Rooms[room].Resources_dict.ContainsKey(required.Key) && Rooms[room].Resources_dict[required.Key] >= required.Value)))
+                    {
+                        // Determine if this room is available 
+                        if (IsRoomAvailbleForDateRange(RoomID, ValidStartDate, ValidEndDate, isRoomUnavailable))
+                        {
+                            RoomIsAvailable = true;
+                            break;
+                        }
+                    }
+                    // If no room is available and there are no more valid start dates, this input will always fail
+                    if (!RoomIsAvailable && ValidStartDate == lastDate)
+                    {
+                        // This input can never be scheduled because no instructor is available without any other inputs being scheduled
+                        CurrentInput.Reason = "No local room is available.";
+                        WillAlwaysFail.Add(CurrentInput);
+                        if (ShowDebugMessages) Console.WriteLine($"Impossible: {CurrentInput.Reason}");
+                        break;
+                    }
+                    if (InstructorIsAvailable && RoomIsAvailable)
+                    {
+                        if (ShowDebugMessages) Console.WriteLine("Possible");
+                        break;
+                    }
+                }
+            }
+            // Remove the objects that will always fail from the input
+            WillAlwaysFail.ForEach(x => Inputs.Remove(x));
+        }
+
+        private void CalculateScore(OptimizerScheduleResults incomingResults)
+        {
+            // Set the score for these results based off of the prioritization
+            switch (MyPriority)
+            {
+                case Priority.MaximizeInstructorLongestToTeach:
+                    break;
+                case (Priority.MaximizeSpecializedInstructors):
+                    break;
+                case (Priority.MinimizeForeignInstructorCount):
+                    incomingResults.OptimizationScore = incomingResults.Results.Where(x => !x.UsingLocalInstructor).ToList().Count;
+                    break;
+                case (Priority.MinimizeInstructorTravelDistance):
+                    break;
+                default:
+                    incomingResults.OptimizationScore = incomingResults.Results.Count;
+                    break;
+            }
+            // set to current best answer if it is now the best
+            if (incomingResults.Results.Count > CurrentBestAnswer.Results.Count)
+            {
+                switch (MyPriority)
+                {
+                    case Priority.MaximizeInstructorLongestToTeach:
+                        break;
+                    case (Priority.MaximizeSpecializedInstructors):
+                        break;
+                    case (Priority.MinimizeForeignInstructorCount):
+                        if (incomingResults.OptimizationScore < CurrentBestAnswer.OptimizationScore)
+                        {
+                            Console.WriteLine("new best found");
+                            CurrentBestAnswer = incomingResults;
+                        }
+                        if (incomingResults.OptimizationScore <= BestPossibleScore)
+                        {
+                            Console.WriteLine("best is set!");
+                            ABestAnswerFound = true;
+                        }
+                        break;
+                    case (Priority.MinimizeInstructorTravelDistance):
+                        break;
+                    default:
+                        CurrentBestAnswer = incomingResults;
+                        if (incomingResults.Results.Count == BestPossibleScore)
+                            ABestAnswerFound = true;
+                        break;
+                }
+            }
         }
 
         /// <summary>
@@ -414,13 +595,14 @@ namespace LSS.Services
             status += $"Total schedules created: {TotalSchedulesCreated}\n";
             status += $"Non end-node evaluations completed: {NonEndNodesThatReturned}\n";
             status += $"Current best optimization score: {CurrentBestAnswer.OptimizationScore}\n";
+            status += $"Best possible score: {BestPossibleScore}\n";
             status += "Nodes per tree level\n";
             status += "Level 0: Node Count 1\n";
             for (int i = 0; i < NodesPerDepth.Length; i++)
             {
-                //if (NodesPerDepth[i] == 0)
-                    //status += $"Level {i + 1}: Node Count ?\n";
-                //else
+                if (NodesPerDepth[i] == 0)
+                    status += $"Level {i + 1}: Node Count ?\n";
+                else
                 if (NodesPerDepth[i] != 0)
                     status += $"Level {i + 1}: Node Count {NodesPerDepth[i]}\n";
             }
@@ -430,7 +612,7 @@ namespace LSS.Services
 
         public bool IsABestAnswerFound()
         {
-            return CurrentBestAnswer.OptimizationScore == NodesPerDepth.Length;
+            return ABestAnswerFound;
         }
 
         /// <summary>
@@ -503,7 +685,7 @@ namespace LSS.Services
         /// <returns>A collection of valid start days for this class</returns>
         private List<DateTime> FindValidStartDates(int locationId, int classLengthDays, int classMaxSize, int? releaseRate,
             int courseId, ref Dictionary<int, Dictionary<string, int>> CurrentlyReleased, 
-            ref Dictionary<int, Dictionary<string, List<int>>> LocallyTaughtCoursesPerDay)
+            ref Dictionary<int, Dictionary<string, List<int>>> LocallyTaughtCoursesPerDay, ref string reason)
         {
             // Check if releaseRate was nullable from the table
             if (!releaseRate.HasValue)
@@ -539,6 +721,7 @@ namespace LSS.Services
                         // and we will skip tuesday and wednesay and start on thursday again which is the next day that the course can be scheduled
                         DaysToSkip = (int)(CurrentDay - FirstDay).TotalDays;
                         ReleaseRateSatisfied = false;
+                        reason = $"The release rate at {Locations.First(x => x.ID == locationId).Code} would have been exceeded";
                         break;
                     }
 
@@ -548,6 +731,7 @@ namespace LSS.Services
                     {
                         DaysToSkip = (int)(CurrentDay - FirstDay).TotalDays;
                         ReleaseRateSatisfied = false;
+                        reason = $"This class is already being taught at {Locations.First(x => x.ID == locationId).Code} during the date range";
                         break;
                     }
                 }
@@ -556,6 +740,10 @@ namespace LSS.Services
                 {
                     ValidStartDates.Add(FirstDay);
                 }
+            }
+            if (reason == "")
+            {
+                reason = $"The class is {classLengthDays} days long while the date range is {TotalWeekDays} days long";
             }
             return ValidStartDates;
         }
@@ -642,6 +830,18 @@ namespace LSS.Services
                     IsInstructorUnavailable[instrUsername][DayAfterAssignment] = true;
                 }
             }
+        }
+
+        private static double GetBusinessDays(DateTime startD, DateTime endD)
+        {
+            double calcBusinessDays =
+                1 + ((endD - startD).TotalDays * 5 -
+                (startD.DayOfWeek - endD.DayOfWeek) * 2) / 7;
+
+            if (endD.DayOfWeek == DayOfWeek.Saturday) calcBusinessDays--;
+            if (startD.DayOfWeek == DayOfWeek.Sunday) calcBusinessDays--;
+
+            return calcBusinessDays;
         }
     }
 }

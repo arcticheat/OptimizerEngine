@@ -64,6 +64,8 @@ namespace LSS.Models
         //Instructor Username
         public String InstrUsername { get; set; }
 
+        public int inputID { get; set; }
+
 
         //Course name
         [NotMapped]

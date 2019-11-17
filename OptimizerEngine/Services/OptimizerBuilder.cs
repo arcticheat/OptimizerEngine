@@ -20,13 +20,15 @@ namespace LSS.Services
         public Dictionary<int, Dictionary<string, List<int>>> LocallyTaughtCoursesPerDay = new Dictionary<int, Dictionary<string, List<int>>>();
         public string TIME_FORMAT = "MM/dd/yyyy";
 
+        public OptimizerScheduleResults StartingResults { get; internal set; }
 
-        public OptimizerEngineBuilder(DatabaseContext _context, DateTime start, DateTime end, bool debug = false)
+        public OptimizerEngineBuilder(DatabaseContext _context, DateTime start, DateTime end, Priority priority, bool debug = false)
         {
             ShowDebugMessages = debug;
             StartDate = start;
             EndDate = end;
             Engine = new OptimizerEngine();
+            Engine.MyPriority = priority;
             context = _context;
         }
 
@@ -45,7 +47,6 @@ namespace LSS.Services
             Engine.context = context;
 
             // Pull in instructors
-                
             Engine.Instructors = context.User.Where(user => user.RoleID == 3).ToList();
 
             // Course Catalog
@@ -94,10 +95,7 @@ namespace LSS.Services
                             LocationIdLiteral = location.ID,
                             RemainingRuns = input.NumTimesToRun
                         }).ToList<OptimizerInput>();
-            Engine.InputCount = Engine.Inputs.Count;
-            var Levels = 0;
-            Engine.Inputs.ForEach(x => Levels += x.NumTimesToRun);
-            Engine.NodesPerDepth = new int[Levels];
+
             if (ShowDebugMessages)
             {
                 Console.WriteLine("Optimizer Inputs");
@@ -165,7 +163,7 @@ namespace LSS.Services
             // Populate the local rooms for each location
             context.Room.ToList().ForEach(room => Engine.Locations.Find(location => location.Code.Equals(room.Station)).LocalRooms.Add(room.ID));
             // Populate the local instructs for each location
-            Engine.Instructors.ForEach(instructor => Engine.Locations.Find(location => location.ID == instructor.PointID).LocalInstructors.Add(instructor.Username));
+            Engine.Instructors.ForEach(instructor => Engine.Locations.First(location => location.ID == instructor.PointID).LocalInstructors.Add(instructor.Username));
             if (ShowDebugMessages)
             {
                 Console.WriteLine("Locations");
@@ -320,6 +318,33 @@ namespace LSS.Services
             }
             
 
+            if (ShowDebugMessages) Console.WriteLine("Data loading complete.\n");
+
+            if (ShowDebugMessages) Console.WriteLine("Checking if any inputs are impossible...");
+            Engine.PrimeStartingResults(ref IsRoomUnavailable, ref IsInstructorUnavailable,
+                    ref CurrentlyReleased, ref LocallyTaughtCoursesPerDay);
+            StartingResults = new OptimizerScheduleResults()
+            {
+                Results = new List<OptimizerResult>(),
+                Inputs = Engine.Inputs,
+                OptimizationScore = 0
+            };
+            Engine.InputCount = Engine.Inputs.Count;
+            var Levels = 0;
+            Engine.Inputs.ForEach(x => Levels += x.NumTimesToRun);
+            Engine.NodesPerDepth = new int[Levels];
+            if (ShowDebugMessages) Console.WriteLine("Done.\n");
+
+            if (ShowDebugMessages)
+            {
+                Console.WriteLine("Optimizer Possible Inputs");
+                ConsoleTable.From<OptimizerInputPrintable>(Engine.Inputs.Select(x => new OptimizerInputPrintable(x))).Write(Format.MarkDown);
+                Console.WriteLine("");
+            }
+
+
+            if (ShowDebugMessages) Console.Write("Predicting the best possible score for the engine...");
+
             // Setup the best answer as something guarenteed to always be the worst
             Engine.CurrentBestAnswer = new OptimizerScheduleResults
             {
@@ -328,7 +353,37 @@ namespace LSS.Services
                 OptimizationScore = -1
             };
 
-            if (ShowDebugMessages) Console.WriteLine("Data loading complete.\n");
+            if (Engine.MyPriority == Priority.MinimizeForeignInstructorCount || Engine.MyPriority == Priority.MinimizeInstructorTravelDistance)
+                Engine.CurrentBestAnswer.OptimizationScore = int.MaxValue;
+
+            switch (Engine.MyPriority)
+            {
+                case Priority.MaximizeInstructorLongestToTeach:
+                    break;
+                case (Priority.MaximizeSpecializedInstructors):
+                    break;
+                case (Priority.MinimizeForeignInstructorCount):
+                    // Set the best answer to 0, meaning 0 instructors to travel
+                    Engine.BestPossibleScore = Levels;
+                    // Increment the best possible answer for every input that has no qualified local instructors
+                    foreach (var input in Engine.Inputs)
+                    {
+                        var CourseInfo = Engine.CourseCatalog.Where(course => course.ID == input.CourseId).First();
+                        if (Engine.Locations.First(z => z.ID == input.LocationIdLiteral).LocalInstructors.Any(x => CourseInfo.QualifiedInstructors.Any(y => x == y)))
+                        {
+                            Engine.BestPossibleScore -= input.NumTimesToRun;
+                        }
+                    }
+                    break;
+                case (Priority.MinimizeInstructorTravelDistance):
+                    break;
+                default:
+                    Engine.BestPossibleScore = Engine.NodesPerDepth.Length;
+                    break;
+            }
+
+            if (ShowDebugMessages) Console.WriteLine($"{Engine.BestPossibleScore}. Done.\n");
+
 
             return Engine;
         }
