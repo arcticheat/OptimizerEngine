@@ -1,4 +1,5 @@
 ﻿using LSS.Models;
+using Microsoft.EntityFrameworkCore;
 using System;
 using System.Collections.Generic;
 using System.Text;
@@ -13,23 +14,18 @@ namespace LSS.Services
         private bool ShowDebugMessages;
         private OptimizerScheduleResults MyResults;
         private bool ThreadInProgress;
+        private DatabaseContext context;
 
-        public OptimizerHandler(OptimizerEngineBuilder builder)
+        public OptimizerHandler(DatabaseContext _context, OptimizerEngineBuilder builder)
         {
             MyBuilder = builder;
             ShowDebugMessages = builder.ShowDebugMessages;
+            context = _context;
         }
 
         public void Run()
         {
             MyEngine = MyBuilder.Build();
-
-            Console.WriteLine("Please review the data the optimizer will be using above.\nHit Enter to continue.");
-            ConsoleKeyInfo c;
-            do
-            {
-                c = Console.ReadKey();
-            } while (c.Key != ConsoleKey.Enter);
 
             var watch = new System.Diagnostics.Stopwatch();
             if (ShowDebugMessages) watch = System.Diagnostics.Stopwatch.StartNew();
@@ -48,7 +44,17 @@ namespace LSS.Services
             }
             thread.Join();
 
-            // save results to database context
+            // Add the results to the table
+            foreach (var result in MyResults.Results)
+            {
+                result.CreationTimestamp = DateTime.Today;
+                context.Entry(result).State = result.ID == 0 ? EntityState.Added : EntityState.Modified;
+            }
+            foreach (var input in MyResults.Inputs)
+            {
+                context.Entry(input).State = input.Id == 0 ? EntityState.Added : EntityState.Modified;
+            }
+            //context.SaveChanges();
 
             if (ShowDebugMessages)
             {

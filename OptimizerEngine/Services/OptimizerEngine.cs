@@ -24,6 +24,7 @@ namespace LSS.Services
         public DateTime EndDate;
         public bool ShowDebugMessages;
         public int InputCount;
+        public DatabaseContext context;
         public OptimizerScheduleResults CurrentBestAnswer;
         private int TotalSchedulesCreated = -1;
         private int NonEndNodesThatReturned = -1;
@@ -140,8 +141,8 @@ namespace LSS.Services
                     Result.CourseID = CurrentInput.CourseId;
                     Result.LocationID = Locations.Where(Loc => Loc.Code == CurrentInput.LocationID).First().ID;
                     Result.Cancelled = false;
-                    Result.StartTime = ValidStartDate - ValidStartDate;
-                    Result.EndTime = ValidStartDate - ValidStartDate;
+                    Result.StartTime = CurrentInput.StartTime;
+                    Result.EndTime = CurrentInput.StartTime.Add(new TimeSpan(Math.Min(8, CourseInfo.Hours), 0, 0));
                     Result.StartDate = ValidStartDate;
                     Result.EndDate = ValidStartDate.AddDays(CurrentInput.LengthDays - 1);
                     Result.RequestType = "Optimizer";
@@ -194,22 +195,19 @@ namespace LSS.Services
                 Console.WriteLine();
             }
 
-            using (var context = new DatabaseContext())
+            // Add the results to the table
+            foreach(var result in Results)
             {
-                // Add the results to the table
-                foreach(var result in Results)
-                {
-                    result.CreationTimestamp = DateTime.Today;
-                    context.Entry(result).State = result.ID == 0 ? EntityState.Added : EntityState.Modified;
-                }
-                foreach(var input in Inputs)
-                {
-                    context.Entry(input).State = input.Id == 0 ? EntityState.Added : EntityState.Modified;
-                }
-                // Save data to the context
-                // TODOD UN DO MEME
-                //context.SaveChanges();
+                result.CreationTimestamp = DateTime.Today;
+                context.Entry(result).State = result.ID == 0 ? EntityState.Added : EntityState.Modified;
             }
+            foreach(var input in Inputs)
+            {
+                context.Entry(input).State = input.Id == 0 ? EntityState.Added : EntityState.Modified;
+            }
+            // Save data to the context
+            context.SaveChanges();
+            
 
             if (ShowDebugMessages) Console.WriteLine("Optimization Complete.\n");
         }
@@ -306,8 +304,8 @@ namespace LSS.Services
                                         CourseID = CurrentInput.CourseId,
                                         LocationID = Locations.Where(Loc => Loc.Code == CurrentInput.LocationID).First().ID,
                                         Cancelled = false,
-                                        StartTime = ValidStartDate - ValidStartDate,
-                                        EndTime = ValidStartDate - ValidStartDate,
+                                        StartTime = CurrentInput.StartTime,
+                                        EndTime = CurrentInput.StartTime.Add(new TimeSpan(Math.Min(8, CourseInfo.Hours), 0, 0)),
                                         StartDate = ValidStartDate,
                                         EndDate = ValidStartDate.AddDays(CurrentInput.LengthDays - 1),
                                         RequestType = "Optimizer",

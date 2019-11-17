@@ -27,9 +27,9 @@ namespace LSS
                     Console.WriteLine("Enter the end day of the range to optimize (dd/mm/yyyy):");
                     EndDate = Convert.ToDateTime(Console.ReadLine());
                 }
-
+            DatabaseContext context = new DatabaseContext();
             Console.WriteLine($"The Optimizer range is set from {StartDate} to {EndDate}");
-            var builder = new Services.OptimizerEngineBuilder(StartDate, EndDate, debug);
+            var builder = new Services.OptimizerEngineBuilder(context, StartDate, EndDate, debug);
 
             // Greedy
             if (!recursion)
@@ -47,7 +47,7 @@ namespace LSS
             // Recursion
             else
             {
-                var handler = new OptimizerHandler(builder);
+                var handler = new OptimizerHandler(context ,builder);
                 handler.Run();
             }
         }

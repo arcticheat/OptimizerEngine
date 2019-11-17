@@ -91,6 +91,8 @@ namespace LSS.Models
 
         [NotMapped]
         public bool UsingLocalInstructor { get; set; }
+        [NotMapped]
+        public string FullName { get; set; }
 
         public OptimizerResult()
         {
