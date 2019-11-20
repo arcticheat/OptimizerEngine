@@ -41,12 +41,6 @@ namespace LSS.Services
         private bool ABestAnswerFound = false;
         public int BestPossibleScore;
         public List<OptimizerInput> WillAlwaysFail = new List<OptimizerInput>();
-        Task<OptimizerScheduleResults> resultsTask;
-        Task<Dictionary<int, Dictionary<string, int>>> crTask;
-        Task<Dictionary<string, Dictionary<string, bool>>> iiuTask;
-        Task<Dictionary<int, Dictionary<string, bool>>> iruTask;
-        Task<Dictionary<int, Dictionary<string, List<int>>>> ltcpdTask;
-        Task<OptimizerScheduleResults> recursionTask;
 
         /// <summary>
         /// The optimizer will calculate a single collection of optimizer results created from the optimizer input
@@ -229,13 +223,13 @@ namespace LSS.Services
                 context.Entry(input).State = input.Id == 0 ? EntityState.Added : EntityState.Modified;
             }
             // Save data to the context
-            context.SaveChanges();
+            //context.SaveChanges();
             
 
             if (ShowDebugMessages) Console.WriteLine("Optimization Complete.\n");
         }
 
-        internal async Task<OptimizerScheduleResults> OptimizeRecursionAsync(OptimizerScheduleResults IncomingResults, int InputIndex,
+        internal OptimizerScheduleResults OptimizeRecursion(OptimizerScheduleResults IncomingResults, int InputIndex,
             Dictionary<string, Dictionary<string, bool>> IsInstructorUnavailable, Dictionary<int, Dictionary<string, bool>> IsRoomUnavailable,
             Dictionary<int, Dictionary<string, int>> CurrentlyReleased,
             Dictionary<int, Dictionary<string, List<int>>> LocallyTaughtCoursesPerDay,
@@ -249,11 +243,34 @@ namespace LSS.Services
 
             // Predict if a better answer is even possible from here
             // First see if adding every single remaining class for the remainder of this branch would 
-            // create a result with more successful resutls than the best
-            if (NodesPerDepth.Length - CurrentDepth + IncomingResults.Results.Count <= CurrentBestAnswer.Results.Count)
+            // create a result with more successful results than the best
+            if (NodesPerDepth.Length - CurrentDepth + IncomingResults.Results.Count < CurrentBestAnswer.Results.Count)
             {
-                // This branch cannot possibly come up with a better answer than what is already found
-                return CurrentBestAnswer;
+                switch (MyPriority)
+                {
+                    case Priority.MaximizeInstructorLongestToTeach:
+                        // TODO finish prioritiziation
+                        //if (IncomingResults.OptimizationScore >= CurrentBestAnswer.OptimizationScore)
+                        //    return CurrentBestAnswer;
+                        break;
+                    case Priority.MaximizeSpecializedInstructors:
+                        if (IncomingResults.OptimizationScore >= CurrentBestAnswer.OptimizationScore)
+                            return CurrentBestAnswer;
+                        break;
+                    case Priority.MinimizeForeignInstructorCount:
+                        if (IncomingResults.OptimizationScore >= CurrentBestAnswer.OptimizationScore)
+                            return CurrentBestAnswer;
+                        break;
+                    case Priority.MinimizeInstructorTravelDistance:
+                        if (IncomingResults.OptimizationScore >= CurrentBestAnswer.OptimizationScore)
+                            return CurrentBestAnswer;
+                        break;
+                    default:
+                        if (NodesPerDepth.Length - CurrentDepth + IncomingResults.Results.Count <=
+                            CurrentBestAnswer.Results.Count)
+                            return CurrentBestAnswer;
+                        break;
+                }
             }
 
             // base case if there are no more inputs
@@ -295,9 +312,6 @@ namespace LSS.Services
                 // Loop through each day within the optimizer range that the course could start on
                 var lastDate = ValidStartDates.LastOrDefault();
 
-                // Tasks for multithreading
-
-
                 foreach (var ValidStartDate in ValidStartDates)
                 {
                     NoValidStartDates = false;
@@ -309,14 +323,20 @@ namespace LSS.Services
                     switch (MyPriority)
                     {
                         case Priority.MaximizeInstructorLongestToTeach:
+                            //TODO added instructor sorting for longest to teach
+                            SortedQualifiedInstructors = CourseInfo.QualifiedInstructors;
                             break;
                         case (Priority.MaximizeSpecializedInstructors):
+                            SortedQualifiedInstructors = CourseInfo.QualifiedInstructors.
+                                OrderBy(x => Instructors.First(y => y.Username == x).QualificationCount).ToList();
                             break;
                         case (Priority.MinimizeForeignInstructorCount):
                             SortedQualifiedInstructors = CourseInfo.QualifiedInstructors.
                                 OrderByDescending(x => Locations.First(y => y.ID == CurrentInput.LocationIdLiteral).LocalInstructors.Contains(x)).ToList();
                             break;
                         case (Priority.MinimizeInstructorTravelDistance):
+                            SortedQualifiedInstructors = CourseInfo.QualifiedInstructors.
+                                OrderByDescending(x => Locations.First(y => y.ID == CurrentInput.LocationIdLiteral).LocalInstructors.Contains(x)).ToList();
                             break;
                         default:
                             SortedQualifiedInstructors = CourseInfo.QualifiedInstructors;
@@ -365,23 +385,15 @@ namespace LSS.Services
                                         inputID = CurrentInput.Id
                                     };
 
-                                    // TO DO MULTITHREADING
-                                    // Deep copy the current results so this child node will have a unique result object to build from
-                                    resultsTask = OptimizerUtilities.DeepClone(IncomingResults);
-                                    // Copy all the unavailability data trackers to update them for this recursion
-                                    crTask = OptimizerUtilities.DeepClone(CurrentlyReleased);
-                                    iiuTask = OptimizerUtilities.DeepClone(IsInstructorUnavailable);
-                                    iruTask = OptimizerUtilities.DeepClone(IsRoomUnavailable);
-                                    ltcpdTask = OptimizerUtilities.DeepClone(LocallyTaughtCoursesPerDay);
-
-                                    await Task.WhenAll(resultsTask, crTask, iiuTask, iruTask, ltcpdTask);
-                                    var MyResults = resultsTask.Result;
-                                    var CRCopy = crTask.Result;
-                                    var IIUCopy = iiuTask.Result;
-                                    var IRUCopy = iruTask.Result;
-                                    var LTCPDCopy = ltcpdTask.Result;
-
                                     NodesPerDepth[CurrentDepth] += 1;
+
+                                    // Deep copy the current results so this child node will have a unique result object to build from
+                                    var MyResults = OptimizerUtilities.DeepClone(IncomingResults);
+                                    // Copy all the unavailability data trackers to update them for this recursion
+                                    var CRCopy = OptimizerUtilities.DeepClone(CurrentlyReleased);
+                                    var IIUCopy = OptimizerUtilities.DeepClone(IsInstructorUnavailable);
+                                    var IRUCopy = OptimizerUtilities.DeepClone(IsRoomUnavailable);
+                                    var LTCPDCopy = OptimizerUtilities.DeepClone(LocallyTaughtCoursesPerDay);
 
 
                                     //update the data container copies with the scheduling info for this result
@@ -395,45 +407,61 @@ namespace LSS.Services
                                     // Add the child's answer 
                                     // repeat this index if there are more times to run
                                     if (MyResults.Inputs[InputIndex].RemainingRuns > 0)
-                                    {
-                                        recursionTask = OptimizeRecursionAsync(MyResults, InputIndex, IIUCopy, IRUCopy, CRCopy, LTCPDCopy, CurrentDepth + 1);
-                                        await recursionTask;
-                                        SubNodeAnswers.Add(recursionTask.Result);
-                                    }
+                                        SubNodeAnswers.Add(OptimizeRecursion(MyResults, InputIndex, IIUCopy, IRUCopy, CRCopy, LTCPDCopy, CurrentDepth + 1));                                        
                                     else
                                     {
                                         MyResults.Inputs[InputIndex].Succeeded = true;
-                                        recursionTask = OptimizeRecursionAsync(MyResults, InputIndex + 1, IIUCopy, IRUCopy, CRCopy, LTCPDCopy, CurrentDepth + 1);
-                                        await recursionTask;
-                                        SubNodeAnswers.Add(recursionTask.Result);
+                                        SubNodeAnswers.Add(OptimizeRecursion(MyResults, InputIndex + 1, IIUCopy, IRUCopy, CRCopy, LTCPDCopy, CurrentDepth + 1));
                                     }
-                                    // Always check if the best answer is already found
-                                    if (IsABestAnswerFound())
+                                    // Predict if a better answer is even possible from here
+                                    // First see if adding every single remaining class for the remainder of this branch would 
+                                    // create a result with more successful resutls than the best
+                                    if (NodesPerDepth.Length - CurrentDepth + IncomingResults.Results.Count < CurrentBestAnswer.Results.Count)
                                     {
-                                        return CurrentBestAnswer;
+                                        switch (MyPriority)
+                                        {
+                                            case Priority.MaximizeInstructorLongestToTeach:
+                                                // TODO finish prioritiziation
+                                                //if (IncomingResults.OptimizationScore >= CurrentBestAnswer.OptimizationScore)
+                                                //    return CurrentBestAnswer;
+                                                break;
+                                            case Priority.MaximizeSpecializedInstructors:
+                                                if (IncomingResults.OptimizationScore >= CurrentBestAnswer.OptimizationScore)
+                                                    return CurrentBestAnswer;
+                                                break;
+                                            case Priority.MinimizeForeignInstructorCount:
+                                                if (IncomingResults.OptimizationScore >= CurrentBestAnswer.OptimizationScore)
+                                                    return CurrentBestAnswer;
+                                                break;
+                                            case Priority.MinimizeInstructorTravelDistance:
+                                                if (IncomingResults.OptimizationScore >= CurrentBestAnswer.OptimizationScore)
+                                                    return CurrentBestAnswer;
+                                                break;
+                                            default:
+                                                if (NodesPerDepth.Length - CurrentDepth + IncomingResults.Results.Count <=
+                                                    CurrentBestAnswer.Results.Count)
+                                                    return CurrentBestAnswer;
+                                                break;
+                                        }
                                     }
                                 }
+
+                                // Always check if the best answer is already found
+                                if (IsABestAnswerFound())
+                                    return CurrentBestAnswer;                          
                             }
                         }
                     }
                 }
 
                 // Must always consider what would happen if this input is not scheduled
-                // TO DO MULTITHREADING
                 // Deep copy the current results so this child node will have a unique result object to build from
-                resultsTask = OptimizerUtilities.DeepClone(IncomingResults);
+                var ResultsNotScheduled = OptimizerUtilities.DeepClone(IncomingResults);
                 // Copy all the unavailability data trackers to update them for this recursion
-                crTask = OptimizerUtilities.DeepClone(CurrentlyReleased);
-                iiuTask = OptimizerUtilities.DeepClone(IsInstructorUnavailable);
-                iruTask = OptimizerUtilities.DeepClone(IsRoomUnavailable);
-                ltcpdTask = OptimizerUtilities.DeepClone(LocallyTaughtCoursesPerDay);
-
-                //await Task.WhenAll(resultsTask, crTask, iiuTask, iruTask, ltcpdTask);
-                var ResultsNotScheduled = resultsTask.Result;
-                var CRCopy_skip = crTask.Result;
-                var IIUCopy_skip = iiuTask.Result;
-                var IRUCopy_skip = iruTask.Result;
-                var LTCPDCopy_skip = ltcpdTask.Result;
+                var CRCopy_skip = OptimizerUtilities.DeepClone(CurrentlyReleased);
+                var IIUCopy_skip = OptimizerUtilities.DeepClone(IsInstructorUnavailable);
+                var IRUCopy_skip = OptimizerUtilities.DeepClone(IsRoomUnavailable);
+                var LTCPDCopy_skip = OptimizerUtilities.DeepClone(LocallyTaughtCoursesPerDay);
 
                 // Always consider not scheduling this course
                 //If there is a reason to skip, set it
@@ -453,10 +481,8 @@ namespace LSS.Services
                     ResultsNotScheduled.Inputs[InputIndex].Reason = "Skipped";
 
                 // Recursion on skipping this input
-                recursionTask = OptimizeRecursionAsync(ResultsNotScheduled, InputIndex + 1, IIUCopy_skip, IRUCopy_skip,
-                    CRCopy_skip, LTCPDCopy_skip, CurrentDepth + CurrentInput.RemainingRuns);
-                await recursionTask;
-                SubNodeAnswers.Add(recursionTask.Result);
+                SubNodeAnswers.Add(OptimizeRecursion(ResultsNotScheduled, InputIndex + 1, IIUCopy_skip, IRUCopy_skip,
+                    CRCopy_skip, LTCPDCopy_skip, CurrentDepth + CurrentInput.RemainingRuns));
 
 
                 // Always check if the best answer is already found
@@ -589,43 +615,88 @@ namespace LSS.Services
             switch (MyPriority)
             {
                 case Priority.MaximizeInstructorLongestToTeach:
+                    // TODO FINISH THIS PRIORITIZATION
+                    var totalDaysBetweenLastAssignment = 0;
+                    incomingResults.OptimizationScore = incomingResults.Results.Count;
                     break;
                 case (Priority.MaximizeSpecializedInstructors):
+                    var totalInstructorQualifications = 0;
+                    foreach(var x in incomingResults.Results)
+                    {
+                        totalInstructorQualifications += Instructors.First(y => x.InstrUsername == y.Username).QualificationCount;
+                    }
+                    incomingResults.OptimizationScore = totalInstructorQualifications;
                     break;
                 case (Priority.MinimizeForeignInstructorCount):
                     incomingResults.OptimizationScore = incomingResults.Results.Where(x => !x.UsingLocalInstructor).ToList().Count;
                     break;
                 case (Priority.MinimizeInstructorTravelDistance):
+                    double totalDistanceTraveled = 0;
+                    foreach(var x in incomingResults.Results)
+                    { 
+                        var clasLoc = Locations.First(y => y.ID == x.LocationID);
+                        var instrLoc = Locations.First(y => y.ID == Instructors.First(z => z.Username == x.InstrUsername).PointID);
+                        totalDistanceTraveled += Utilities.getDistanceLatLong(clasLoc.Latitude, clasLoc.Longitude, instrLoc.Latitude,
+                            instrLoc.Longitude);{ }
+                    }
+                    incomingResults.OptimizationScore = (int)totalDistanceTraveled;
                     break;
                 default:
                     incomingResults.OptimizationScore = incomingResults.Results.Count;
                     break;
             }
-            // set to current best answer if it is now the best
-            if (incomingResults.Results.Count > CurrentBestAnswer.Results.Count)
+            // If the results have as many successful results, see if there is a better score and then set the best if so
+            if (incomingResults.Results.Count == CurrentBestAnswer.Results.Count)
             {
                 switch (MyPriority)
                 {
                     case Priority.MaximizeInstructorLongestToTeach:
+                        if (incomingResults.OptimizationScore > CurrentBestAnswer.OptimizationScore)
+                            CurrentBestAnswer = incomingResults;
                         break;
                     case (Priority.MaximizeSpecializedInstructors):
+                        if (incomingResults.OptimizationScore < CurrentBestAnswer.OptimizationScore)
+                            CurrentBestAnswer = incomingResults;
                         break;
                     case (Priority.MinimizeForeignInstructorCount):
                         if (incomingResults.OptimizationScore < CurrentBestAnswer.OptimizationScore)
-                        {
                             CurrentBestAnswer = incomingResults;
-                        }
-                        if (incomingResults.OptimizationScore <= BestPossibleScore)
-                        {
-                            ABestAnswerFound = true;
-                        }
                         break;
                     case (Priority.MinimizeInstructorTravelDistance):
+                        if (incomingResults.OptimizationScore < CurrentBestAnswer.OptimizationScore)
+                            CurrentBestAnswer = incomingResults;
                         break;
                     default:
-                        CurrentBestAnswer = incomingResults;
-                        if (incomingResults.Results.Count == BestPossibleScore)
+                        break;
+                }
+            }
+            // if the resutls had more successful results, it is automatically the new best
+            if (incomingResults.Results.Count > CurrentBestAnswer.Results.Count)
+                CurrentBestAnswer = incomingResults;
+
+            // check if the answer is now the best possible
+            if (CurrentBestAnswer.Results.Count >= NodesPerDepth.Length)
+            {
+                switch (MyPriority)
+                {
+                    case Priority.MaximizeInstructorLongestToTeach:
+                        if (incomingResults.OptimizationScore >= BestPossibleScore)
                             ABestAnswerFound = true;
+                        break;
+                    case (Priority.MaximizeSpecializedInstructors):
+                        if (incomingResults.OptimizationScore <= BestPossibleScore)
+                            ABestAnswerFound = true;
+                        break;
+                    case (Priority.MinimizeForeignInstructorCount):
+                        if (incomingResults.OptimizationScore <= BestPossibleScore)
+                            ABestAnswerFound = true;
+                        break;
+                    case (Priority.MinimizeInstructorTravelDistance):
+                        if (incomingResults.OptimizationScore <= BestPossibleScore)
+                            ABestAnswerFound = true;
+                        break;
+                    default:
+                        ABestAnswerFound = true;
                         break;
                 }
             }
@@ -636,13 +707,13 @@ namespace LSS.Services
         /// </summary>
         public string GetStatus(string counter, TimeSpan elapsedTime)
         {
-
             var status = $"\n              Status {counter} \n";
             status += "--------------------------------------|\n";
             status += $"Elapsed time: {elapsedTime.Hours}h:{elapsedTime.Minutes}m:{elapsedTime.Seconds}s\n";
             status += $"Total schedules created: {TotalSchedulesCreated}\n";
             status += $"Non end-node evaluations completed: {NonEndNodesThatReturned}\n";
             status += $"Current best optimization score: {CurrentBestAnswer.OptimizationScore}\n";
+            status += $"Current best optimization answer result size: {CurrentBestAnswer.Results.Count}\n";
             status += $"Best possible score: {BestPossibleScore}\n";
             status += "Nodes per tree level\n";
             status += "Level 0: Node Count 1\n";
@@ -667,7 +738,19 @@ namespace LSS.Services
             var MostSuccessfullyScheduled = subNodeAnswers.Max( x => x.Results.Count);
             var AnswersWithHighestSuccessfullyScheduled = subNodeAnswers.Where(x => x.Results.Count == MostSuccessfullyScheduled);
 
-            return AnswersWithHighestSuccessfullyScheduled.First();
+            switch (MyPriority)
+            {
+                case Priority.MaximizeInstructorLongestToTeach:
+                    return AnswersWithHighestSuccessfullyScheduled.MaxBy(x => x.OptimizationScore).First();
+                case (Priority.MaximizeSpecializedInstructors):
+                    return AnswersWithHighestSuccessfullyScheduled.MinBy(x => x.OptimizationScore).First();
+                case (Priority.MinimizeForeignInstructorCount):
+                    return AnswersWithHighestSuccessfullyScheduled.MinBy(x => x.OptimizationScore).First();
+                case (Priority.MinimizeInstructorTravelDistance):
+                    return AnswersWithHighestSuccessfullyScheduled.MinBy(x => x.OptimizationScore).First();
+                default:
+                    return AnswersWithHighestSuccessfullyScheduled.First();
+            }
         }
 
         /// <summary>

@@ -30,7 +30,7 @@ namespace LSS.Models
 
         //ID of user's supervisor
         public String SupervisorID { get; set; }
-        
+
         //User's FileNumber
         [Key]
         public String FileNumber { get; set; }
@@ -65,6 +65,8 @@ namespace LSS.Models
         //User's Role
         [NotMapped]
         public string Role { get; set; }
+        [NotMapped]
+        public int QualificationCount { get; set; }
     }
 
     /// <summary>

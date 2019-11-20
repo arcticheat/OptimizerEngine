@@ -60,6 +60,11 @@ namespace LSS.Services
                 .FirstOrDefault().
                 QualifiedInstructors.Add(status.InstructorID));
 
+            // Add to each instructor the amount of courses they can teach
+            context.InstructorStatus.
+                Where(status => status.Deleted == false && Engine.Instructors.Any(y => y.Username == status.InstructorID)).ToList().
+                ForEach(status => Engine.Instructors.Where(x => x.Username == status.InstructorID).FirstOrDefault().QualificationCount++);
+
             // Add to each course the required resources it needs from a room
             context.CourseRequiredResources.ToList().
                 ForEach(required => Engine.CourseCatalog.Where(course => course.ID == required.CourseID).
@@ -376,6 +381,8 @@ namespace LSS.Services
                     }
                     break;
                 case (Priority.MinimizeInstructorTravelDistance):
+                    // Set the best answer to 0, meaning 0 instructors to travel
+                    Engine.BestPossibleScore = 0;
                     break;
                 default:
                     Engine.BestPossibleScore = Engine.NodesPerDepth.Length;

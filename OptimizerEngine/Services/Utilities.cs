@@ -2,6 +2,7 @@
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
+using Geolocation;
 using LSS.Models;
 
 namespace LSS.Services
@@ -57,7 +58,18 @@ namespace LSS.Services
 
         public static double getDistanceLatLong(double lat1, double lon1, double lat2, double lon2)
         {
-            return Math.Sqrt(Math.Pow(lat1 - lat2, 2) + Math.Pow(lon1 - lon2, 2));
+            var sCoord = new Coordinate()
+            {
+                Latitude = lat1,
+                Longitude = lon1
+            };
+            var lCoord = new Coordinate()
+            {
+                Latitude = lat2,
+                Longitude = lon2
+            };
+
+            return GeoCalculator.GetDistance(sCoord.Latitude, sCoord.Longitude, lCoord.Latitude, lCoord.Longitude);
         }
 
     }

@@ -14,10 +14,10 @@ namespace LSS
         {
             bool askForInput = false;
             bool debug = true;
-            Priority priority = Priority.Default;
+            Priority priority = Priority.MinimizeForeignInstructorCount;
 
             DateTime StartDate = Convert.ToDateTime("1/1/2020");
-            DateTime EndDate = Convert.ToDateTime("1/31/2020");
+            DateTime EndDate = Convert.ToDateTime("3/31/2020");
 
             if (askForInput)
             {

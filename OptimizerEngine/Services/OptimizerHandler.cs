@@ -51,25 +51,29 @@ namespace LSS.Services
             }
             thread.Join();
 
-            // Add the results to the table
-            foreach (var result in MyResults.Results)
+            if (MyEngine.MyPriority != Priority.FirstAvailable)
             {
-                result.CreationTimestamp = DateTime.Today;
-                context.Entry(result).State = result.ID == 0 ? EntityState.Added : EntityState.Modified;
-            }
-            foreach (var input in MyResults.Inputs)
-            {
-                context.Entry(input).State = input.Id == 0 ? EntityState.Added : EntityState.Modified;
-            }
-            //context.SaveChanges();
+                // Add the results to the table
+                foreach (var result in MyResults.Results)
+                {
+                    result.CreationTimestamp = DateTime.Today;
+                    context.Entry(result).State = result.ID == 0 ? EntityState.Added : EntityState.Modified;
+                }
+                foreach (var input in MyResults.Inputs)
+                {
+                    context.Entry(input).State = input.Id == 0 ? EntityState.Added : EntityState.Modified;
+                }
+                //context.SaveChanges();
 
-            if (ShowDebugMessages)
-            {
-                Console.WriteLine("Optimization Complete.\n");
-                MyResults.Print();
-                watch.Stop();
-                Console.WriteLine(MyEngine.GetStatus("Final", watch.Elapsed));
+                if (ShowDebugMessages)
+                {
+                    Console.WriteLine("Optimization Complete.\n");
+                    MyResults.Print();
+                    watch.Stop();
+                    Console.WriteLine(MyEngine.GetStatus("Final", watch.Elapsed));
+                }
             }
+            
         }
 
         async void Optimize()
@@ -79,10 +83,17 @@ namespace LSS.Services
                     MyBuilder.CurrentlyReleased, MyBuilder.LocallyTaughtCoursesPerDay);
             else
             {
-                Task<OptimizerScheduleResults> resultThread = MyEngine.OptimizeRecursionAsync(MyBuilder.StartingResults, 0, MyBuilder.IsInstructorUnavailable,
-                    MyBuilder.IsRoomUnavailable, MyBuilder.CurrentlyReleased, MyBuilder.LocallyTaughtCoursesPerDay, 0);
-                await resultThread;
-                MyResults = resultThread.Result;
+                try
+                {
+                    MyResults = MyEngine.OptimizeRecursion(MyBuilder.StartingResults, 0, MyBuilder.IsInstructorUnavailable,
+    MyBuilder.IsRoomUnavailable, MyBuilder.CurrentlyReleased, MyBuilder.LocallyTaughtCoursesPerDay, 0);
+                }
+                catch (Exception e)
+                {
+                    Console.WriteLine(e.StackTrace);
+                    
+                }
+
             }
                 
             ThreadInProgress = false;

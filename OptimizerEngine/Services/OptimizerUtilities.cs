@@ -164,7 +164,7 @@ namespace LSS.Services
                 output += '\n';
             }
         }
-        public async static Task<T> DeepClone<T>(T obj)
+        public static T DeepClone<T>(T obj)
         {
             using (var ms = new MemoryStream())
             {
