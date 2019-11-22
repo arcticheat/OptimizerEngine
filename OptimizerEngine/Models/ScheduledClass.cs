@@ -87,5 +87,6 @@ namespace LSS.Models
         
         [NotMapped]
         public int ClassSizeLimit { get; set; }
+
     }
 }

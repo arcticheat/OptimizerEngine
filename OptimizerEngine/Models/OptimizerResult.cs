@@ -64,8 +64,6 @@ namespace LSS.Models
         //Instructor Username
         public String InstrUsername { get; set; }
 
-        public int inputID { get; set; }
-
 
         //Course name
         [NotMapped]
@@ -95,6 +93,11 @@ namespace LSS.Models
         public bool UsingLocalInstructor { get; set; }
         [NotMapped]
         public string FullName { get; set; }
+
+        public int inputID { get; set; }
+
+        [NotMapped]
+        public string Building { get; set; }
 
         public OptimizerResult()
         {

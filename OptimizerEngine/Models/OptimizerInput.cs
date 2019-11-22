@@ -17,6 +17,7 @@ namespace LSS.Models
         public String CourseTitle { get; set; }
         public bool Succeeded { get; set; }
         public string Reason { get; set; }
+        public bool Selected { get; set; }
         [NotMapped]
         public int LengthDays { get; set; }
         [NotMapped]

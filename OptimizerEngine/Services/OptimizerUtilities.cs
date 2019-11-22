@@ -88,15 +88,12 @@ namespace LSS.Services
 
         public static void PrintRoomTable(List<Location> Locations)
         {
-            Console.WriteLine("| LocationID | Local Room IDs |");
-            Console.WriteLine("|------------|----------------|");
+            Console.WriteLine("| LocationCode | Local Room IDs |");
+            Console.WriteLine("|--------------|----------------|");
             foreach (var l in Locations)
             {
                 if (!l.HasLocalRooms()) continue;
-                Console.Write($"| {l.ID}         ");
-                if (l.ID / 10 == 0)
-                    Console.Write(" ");
-                Console.Write("|");
+                Console.Write($"| {l.Code}          |");
                 string RoomsString = " ";
                 foreach (var r in l.LocalRooms)
                 {
@@ -113,22 +110,19 @@ namespace LSS.Services
         }
         public static void PrintInstructorTable(List<Location> Locations)
         {
-            Console.WriteLine("| LocationID | Local Instructor IDs |");
-            Console.WriteLine("|------------|----------------------|");
+            Console.WriteLine("| LocationCode | Local Instructor IDs |");
+            Console.WriteLine("|--------------|----------------------|");
             foreach (var l in Locations)
             {
                 if (!l.HasLocalInstructors()) continue;
-                Console.Write($"| {l.ID}         ");
-                if (l.ID / 10 == 0)
-                    Console.Write(" ");
-                Console.Write("|");
+                Console.Write($"| {l.Code}          |");
                 string InstructorString = " ";
                 int InstructorsOnLine = 0;
                 foreach (var i in l.LocalInstructors)
                 {
                     if (InstructorsOnLine >= 10)
                     {
-                        InstructorString += "\n|------------| ";
+                        InstructorString += "\n|              | ";
                         InstructorsOnLine = 0;
                     }
                     InstructorString += i + ", ";
@@ -174,6 +168,16 @@ namespace LSS.Services
 
                 return (T)formatter.Deserialize(ms);
             }
+        }
+
+        // source: https://stackoverflow.com/questions/419019/split-list-into-sublists-with-linq/10425490
+        public static List<List<T>> Split<T>(List<T> source, int subLists)
+        {
+            return source
+                .Select((x, i) => new { Index = i, Value = x })
+                .GroupBy(x => x.Index / subLists)
+                .Select(x => x.Select(v => v.Value).ToList())
+                .ToList();
         }
 
     }

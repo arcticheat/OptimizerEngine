@@ -22,7 +22,7 @@ namespace LSS.Models
         public int? ScheduleID { get; set; }
 
         //Exception code
-        public int CodeID { get; set; }
+        public int? CodeID { get; set; }
 
         //Location of exception
         public int LocationID { get; set; }

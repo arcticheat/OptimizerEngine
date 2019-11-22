@@ -80,7 +80,7 @@ namespace LSS.Models
         {
             if (!optionsBuilder.IsConfigured)
             {
-                optionsBuilder.UseSqlServer("Data Source=DESKTOP-I5E3UDR;Initial Catalog=Optimizer_LSS_Local;Integrated Security=true;");
+                optionsBuilder.UseSqlServer("Data Source=DESKTOP-I5E3UDR;Initial Catalog=LSS_beta_copy_local;Integrated Security=true;");
             }
         }
     }

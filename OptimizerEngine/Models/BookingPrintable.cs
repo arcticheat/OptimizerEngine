@@ -9,7 +9,7 @@ namespace LSS.Models
     {
         public long Id { get; set; }
         public string RequestForId { get; set; }
-        public int CodeId { get; set; }
+        public int? CodeId { get; set; }
         public DateTime StartDate { get; set; }
         public DateTime EndDate { get; set; }
         public int? LocationId { get; set; }

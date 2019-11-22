@@ -83,7 +83,7 @@ namespace LSS.Services
                         on input.CourseCode equals course.Code
                         join location in context.Location
                         on input.LocationID equals location.Code
-                        where input.Succeeded == false
+                        where input.Succeeded == false && input.Selected == true
                         orderby course.Hours descending
                         select new OptimizerInput()
                         {
@@ -94,19 +94,13 @@ namespace LSS.Services
                             StartTime = input.StartTime,
                             CourseTitle = input.CourseTitle,
                             Succeeded = input.Succeeded,
-                            Reason = input.Reason,
+                            Reason = "",
                             LengthDays = Math.Max(course.Hours / 8, 1),
                             CourseId = (int)course.ID,
                             LocationIdLiteral = location.ID,
-                            RemainingRuns = input.NumTimesToRun
+                            RemainingRuns = input.NumTimesToRun,
+                            Selected = input.Selected
                         }).ToList<OptimizerInput>();
-
-            if (ShowDebugMessages)
-            {
-                Console.WriteLine("Optimizer Inputs");
-                ConsoleTable.From<OptimizerInputPrintable>(Engine.Inputs.Select(x => new OptimizerInputPrintable(x))).Write(Format.MarkDown);
-                Console.WriteLine("");
-            }
 
             // Scheduled/Planned classes
             // Only grab classes within the optimzer time range and that aren't cancelled
@@ -116,12 +110,7 @@ namespace LSS.Services
                 (DateTime.Compare(c.EndDate, Engine.StartDate) >= 0 && DateTime.Compare(c.EndDate, Engine.EndDate) <= 0) ||
                 (DateTime.Compare(c.StartDate, Engine.StartDate) < 0 && DateTime.Compare(c.EndDate, Engine.EndDate) > 0)
                 )).ToList();
-            if (ShowDebugMessages)
-            {
-                Console.WriteLine("Current Schedule");
-                ConsoleTable.From<ScheduledClassPrintable>(Engine.CurrentSchedule.Select(c => new ScheduledClassPrintable(c))).Write(Format.MarkDown);
-                Console.WriteLine("");
-            }
+
 
             // Instructor assignments
             Engine.InstructorAssignments = context.InstructorOfClass
@@ -130,24 +119,17 @@ namespace LSS.Services
                     (DateTime.Compare(i.EndDate, Engine.StartDate) >= 0 && DateTime.Compare(i.EndDate, Engine.EndDate) <= 0) ||
                     (DateTime.Compare(i.StartDate, Engine.StartDate) < 0 && DateTime.Compare(i.EndDate, Engine.EndDate) > 0)
                     )).ToList();
-
             // Remove instructor assignments if the instructor is not in the user table
             Engine.InstructorAssignments.RemoveAll(assignment => !Engine.Instructors.Any(instructor => instructor.Username == assignment.UserID));
 
-            // Remove all assignments if the course isn't in the catalog
-            Engine.InstructorAssignments.RemoveAll(assignment => !Engine.CourseCatalog.Any(course => course.ID == assignment.ID));
+            // Remove all assignments if its specified course isn't in the catalog
+            Engine.InstructorAssignments.RemoveAll(assignment => !Engine.CourseCatalog.Any(course => Engine.CurrentSchedule.FirstOrDefault(schedule => schedule.ID == assignment.ClassID).CourseID == course.ID));
 
             // Update instructor assignments by marking them if they are local assignments
             Engine.InstructorAssignments.
                 ForEach(Assignment => Assignment.LocalAssignment = (
                 Engine.Instructors.Where(instructor => instructor.Username == Assignment.UserID).First().PointID ==
                 Engine.CurrentSchedule.Where(Class => Assignment.ClassID == Class.ID).First().LocationID));
-            if (ShowDebugMessages)
-            {
-                Console.WriteLine("Instructor Assignments");
-                ConsoleTable.From<InstructorOfClass>(Engine.InstructorAssignments).Write(Format.MarkDown);
-                Console.WriteLine("");
-            }
 
             // Exceptions
             Engine.Exceptions = context.Booking
@@ -156,12 +138,6 @@ namespace LSS.Services
                 (DateTime.Compare(b.EndDate, Engine.StartDate) >= 0 && DateTime.Compare(b.EndDate, Engine.EndDate) <= 0) ||
                 (DateTime.Compare(b.StartDate, Engine.StartDate) < 0 && DateTime.Compare(b.EndDate, Engine.EndDate) > 0))
                 ).ToList();
-            if (ShowDebugMessages)
-            {
-                Console.WriteLine("Bookings");
-                ConsoleTable.From<BookingPrintable>(Engine.Exceptions.Select(e => new BookingPrintable(e))).Write(Format.MarkDown);
-                Console.WriteLine("");
-            }
 
             // Locations
             Engine.Locations = context.Location.ToList();
@@ -169,8 +145,32 @@ namespace LSS.Services
             context.Room.ToList().ForEach(room => Engine.Locations.Find(location => location.Code.Equals(room.Station)).LocalRooms.Add(room.ID));
             // Populate the local instructs for each location
             Engine.Instructors.ForEach(instructor => Engine.Locations.First(location => location.ID == instructor.PointID).LocalInstructors.Add(instructor.Username));
+
             if (ShowDebugMessages)
             {
+                Console.WriteLine("Optimizer Inputs");
+                ConsoleTable.From<OptimizerInputPrintable>(Engine.Inputs.Select(x => new OptimizerInputPrintable(x))).Write(Format.MarkDown);
+                Console.WriteLine("");
+
+                // Assign to each scheduled class its instructor, for printing purposes
+                Engine.InstructorAssignments.ForEach(assignment => Engine.CurrentSchedule.First(classEvent => classEvent.ID == assignment.ClassID)
+                .Instructor = Engine.Instructors.First(instructor => instructor.Username == assignment.UserID));
+
+                Engine.CurrentSchedule.ForEach(classEvent => classEvent.CourseCode = Engine.CourseCatalog.First(course => course.ID == classEvent.CourseID).Code);
+                Engine.CurrentSchedule.ForEach(classEvent => classEvent.Location = Engine.Locations.First(loc => loc.ID == classEvent.LocationID).Code);
+
+                Console.WriteLine("Current Schedule");
+                ConsoleTable.From<ScheduledClassPrintable>(Engine.CurrentSchedule.Select(c => new ScheduledClassPrintable(c))).Write(Format.MarkDown);
+                Console.WriteLine("");
+
+                Console.WriteLine("Instructor Assignments");
+                ConsoleTable.From<InstructorOfClass>(Engine.InstructorAssignments).Write(Format.MarkDown);
+                Console.WriteLine("");
+
+                Console.WriteLine("Bookings");
+                ConsoleTable.From<BookingPrintable>(Engine.Exceptions.Select(e => new BookingPrintable(e))).Write(Format.MarkDown);
+                Console.WriteLine("");
+
                 Console.WriteLine("Locations");
                 ConsoleTable.From(Engine.Locations).Write(Format.MarkDown);
                 Console.WriteLine("");
@@ -229,41 +229,63 @@ namespace LSS.Services
             }
             if (ShowDebugMessages)
             {
-                Console.WriteLine("IsRoomUnavailable");
-                var Headers = new List<string> { "RoomID" };
-                WeekDaysInRange.ForEach(day => Headers.Add(day.Substring(0, day.Length - 5)));
-                var table = new ConsoleTable(Headers.ToArray());
-                foreach (var RoomPair in IsRoomUnavailable)
+                List<string> Headers;
+                ConsoleTable table;
+                foreach(var sublist in OptimizerUtilities.Split(WeekDaysInRange, 20))
                 {
-                    var row = new List<string> { RoomPair.Key.ToString() };
-                    RoomPair.Value.ToList().ForEach(pair => row.Add(pair.Value.ToString()));
-                    table.AddRow(row.ToArray());
+                    Headers = new List<string> { "RoomID" };
+                    sublist.ForEach(day => Headers.Add(day.Substring(0, day.Length - 5)));
+                    table = new ConsoleTable(Headers.ToArray());
+                    foreach (var RoomPair in IsRoomUnavailable)
+                    {
+                        var row = new List<string> { RoomPair.Key.ToString() };
+                        RoomPair.Value.ToList().ForEach(pair =>
+                        {
+                            if (sublist.Contains(pair.Key))
+                                    row.Add((pair.Value ? "Yes" : ""));
+                        });
+                        table.AddRow(row.ToArray());
+                    }
+                    Console.WriteLine("IsRoomUnavailable");
+                    table.Write(Format.MarkDown);
                 }
-                table.Write(Format.MarkDown);
 
-                Console.WriteLine("CurrentlyReleased");
-                Headers = new List<string> { "LocationID" };
-                WeekDaysInRange.ForEach(day => Headers.Add(day.Substring(0, day.Length - 5)));
-                table = new ConsoleTable(Headers.ToArray());
-                foreach (var LocPair in CurrentlyReleased)
+                foreach (var sublist in OptimizerUtilities.Split(WeekDaysInRange, 20))
                 {
-                    var row = new List<string> { LocPair.Key.ToString() };
-                    LocPair.Value.ToList().ForEach(pair => row.Add(pair.Value.ToString()));
-                    table.AddRow(row.ToArray());
+                    Headers = new List<string> { "Location" };
+                    sublist.ForEach(day => Headers.Add(day.Substring(0, day.Length - 5)));
+                    table = new ConsoleTable(Headers.ToArray());
+                    foreach (var LocPair in CurrentlyReleased)
+                    {
+                        var row = new List<string> { Engine.Locations.First(loc => loc.ID == LocPair.Key).Code };
+                        LocPair.Value.ToList().ForEach(pair =>
+                        {
+                            if (sublist.Contains(pair.Key))
+                                row.Add((pair.Value > 0 ? pair.Value.ToString() : ""));
+                        });
+                        table.AddRow(row.ToArray());
+                    }
+                    Console.WriteLine("CurrentlyReleased");
+                    table.Write(Format.MarkDown);
                 }
-                table.Write(Format.MarkDown);
 
-                Console.WriteLine("Locally taught courses at each location");
-                Headers = new List<string> { "LocationID" };
-                WeekDaysInRange.ForEach(day => Headers.Add(day.Substring(0, day.Length - 5)));
-                table = new ConsoleTable(Headers.ToArray());
-                foreach (var Location in LocallyTaughtCoursesPerDay)
+                foreach (var sublist in OptimizerUtilities.Split(WeekDaysInRange, 20))
                 {
-                    var row = new List<string> { Location.Key.ToString() };
-                    Location.Value.Values.ToList().ForEach(list => row.Add(string.Join(", ", list)));
-                    table.AddRow(row.ToArray());
+                    Headers = new List<string> { "Location" };
+                    sublist.ForEach(day => Headers.Add(day.Substring(0, day.Length - 5)));
+                    table = new ConsoleTable(Headers.ToArray());
+                    foreach (var Location in LocallyTaughtCoursesPerDay)
+                    {
+                        var row = new List<string> { Engine.Locations.First(loc => loc.ID == Location.Key).Code };
+                        Location.Value.Where(pair => sublist.Contains(pair.Key)).ToList().ForEach(list => 
+                        {
+                            row.Add(string.Join(", ", list.Value));
+                        });
+                        table.AddRow(row.ToArray());
+                    }
+                    Console.WriteLine("Locally taught courses at each location");
+                    table.Write(Format.MarkDown);
                 }
-                table.Write(Format.MarkDown);
             }
 
             // Populate the unavailability area with the instructor assignments
@@ -309,19 +331,27 @@ namespace LSS.Services
             }
             if (ShowDebugMessages)
             {
-                Console.WriteLine("IsInstructorUnavailable");
-                var Headers = new List<string> { "Username" };
-                WeekDaysInRange.ForEach(day => Headers.Add(day.Substring(0, day.Length - 5)));
-                var table = new ConsoleTable(Headers.ToArray());
-                foreach (var InstructorPair in IsInstructorUnavailable)
+                List<string> Headers;
+                ConsoleTable table;
+                foreach (var sublist in OptimizerUtilities.Split(WeekDaysInRange, 20))
                 {
-                    var row = new List<string> { InstructorPair.Key.ToString() };
-                    InstructorPair.Value.ToList().ForEach(pair => row.Add(pair.Value.ToString()));
-                    table.AddRow(row.ToArray());
+                    Headers = new List<string> { "Username" };
+                    sublist.ForEach(day => Headers.Add(day.Substring(0, day.Length - 5)));
+                    table = new ConsoleTable(Headers.ToArray());
+                    foreach (var InstructorPair in IsInstructorUnavailable)
+                    {
+                        var row = new List<string> { InstructorPair.Key.ToString() };
+                        InstructorPair.Value.ToList().ForEach(pair =>
+                        {
+                            if (sublist.Contains(pair.Key))
+                                row.Add((pair.Value ? "Yes" : ""));
+                        });
+                        table.AddRow(row.ToArray());
+                    }
+                    Console.WriteLine("IsInstructorUnavailable");
+                    table.Write(Format.MarkDown);
                 }
-                table.Write(Format.MarkDown);
             }
-            
 
             if (ShowDebugMessages) Console.WriteLine("Data loading complete.\n");
 

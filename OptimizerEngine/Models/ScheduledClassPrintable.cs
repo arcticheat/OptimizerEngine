@@ -10,10 +10,10 @@ namespace LSS.Models
         public int ID { get; set; }
 
         //Course ID
-        public int CourseID { get; set; }
+        public string CourseCode { get; set; }
 
         //Location ID of course
-        public int LocationID { get; set; }
+        public string LocationCode { get; set; }
 
         //Room ID of course
         public int RoomID { get; set; }
@@ -34,19 +34,24 @@ namespace LSS.Models
         //is hidden flag
         public bool Hidden { get; set; }
 
+        public string Instructor { get; set; }
+
+        public string InstructorLastname { get; set; }
+
 
         public ScheduledClassPrintable(ScheduledClass scheduled)
         {
             ID = scheduled.ID;
-            CourseID = scheduled.CourseID;
-            LocationID = scheduled.LocationID;
+            CourseCode = scheduled.CourseCode;
+            LocationCode = scheduled.Location;
             RoomID = scheduled.RoomID;
             StartTime = scheduled.StartTime;
             EndTime = scheduled.EndTime;
             StartDate = scheduled.StartDate;
             EndDate = scheduled.EndDate;
             Hidden = scheduled.Hidden;
-
+            Instructor = scheduled.Instructor.Username;
+            InstructorLastname = scheduled.Instructor.LastName;
         }
     }
 }

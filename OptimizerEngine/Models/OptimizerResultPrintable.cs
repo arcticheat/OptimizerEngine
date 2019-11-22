@@ -31,7 +31,6 @@ namespace LSS.Models
         public DateTime EndDate { get; set; }
 
         public string Instructor { get; set; }
-        public bool UsingLocalInstructor { get; set; }
         
 
         public OptimizerResultPrintable(OptimizerResult result)
@@ -45,7 +44,6 @@ namespace LSS.Models
             StartDate = result.StartDate;
             EndDate = result.EndDate;
             Instructor = result.InstrUsername;
-            UsingLocalInstructor = result.UsingLocalInstructor;
         }
     }
 }

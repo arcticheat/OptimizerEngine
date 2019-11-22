@@ -46,15 +46,19 @@ namespace LSS.Services
         /// The optimizer will calculate a single collection of optimizer results created from the optimizer input
         /// The results are created by ensuring the schedule is legal as well as assigning the resources on a first available focus
         /// </summary>
-        public void OptimizeGreedy(Dictionary<int, Dictionary<string, bool>> IsRoomUnavailable, Dictionary<string, Dictionary<string, bool>> IsInstructorUnavailable,
+        internal OptimizerScheduleResults OptimizeGreedy(Dictionary<int, Dictionary<string, bool>> IsRoomUnavailable, Dictionary<string, Dictionary<string, bool>> IsInstructorUnavailable,
             Dictionary<int, Dictionary<string, int>> CurrentlyReleased, Dictionary<int, Dictionary<string, List<int>>> LocallyTaughtCoursesPerDay)
         {
-            if (ShowDebugMessages) Console.WriteLine("Optimizing...\n");
-            // Container for the results
-            var Results = new List<OptimizerResult>();
+            // Struct for the answr
+            var Answer = new OptimizerScheduleResults()
+            {
+                Results = new List<OptimizerResult>(),
+                Inputs = OptimizerUtilities.DeepClone(this.Inputs),
+                OptimizationScore = 0
+            };
 
             // Loop through each input from the optimizer
-            foreach (var CurrentInput in Inputs)
+            foreach (var CurrentInput in Answer.Inputs)
             {
                 if (ShowDebugMessages) Console.WriteLine($"Calculating result for input ID {CurrentInput.Id}... ");
 
@@ -64,8 +68,8 @@ namespace LSS.Services
 
                 // Obtain the information about this course in the catalog
                 var CourseInfo = CourseCatalog.Where(course => course.ID == CurrentInput.CourseId).First();
-
                 var reason = "";
+
                 // Obtain all possible start dates (restricted by location release rate and course length)
                 var ValidStartDates = FindValidStartDates(CurrentInput.LocationIdLiteral, CurrentInput.LengthDays, MaxClassSize, ReleaseRate,
                     (int)CourseInfo.ID, ref CurrentlyReleased, ref LocallyTaughtCoursesPerDay, ref reason);
@@ -82,6 +86,15 @@ namespace LSS.Services
                 
                 foreach (var ValidStartDate in ValidStartDates)
                 {
+                    if (LocallyTaughtCoursesPerDay[CurrentInput.LocationIdLiteral][ValidStartDate.ToString(TIME_FORMAT)].Contains((int)CourseInfo.ID))
+                    {
+                        if (ValidStartDate == lastDate)
+                        {
+                            CurrentInput.Reason = $"Could only schedule {currentIterationForThisInput} out of {CurrentInput.NumTimesToRun} requests";
+                        }
+                        continue;
+                    }
+
                     // result object for this input
                     var Result = new OptimizerResult
                     {
@@ -90,6 +103,7 @@ namespace LSS.Services
                     };
 
                     if (ShowDebugMessages) Console.WriteLine($"Searching on the start date {ValidStartDate.ToString(TIME_FORMAT)} for an instructor and room.");
+
                     // Set the end date for this range based off of the course length
                     var ValidEndDate = Utilities.getNextBusinessDate(ValidStartDate, CurrentInput.LengthDays - 1);
 
@@ -170,7 +184,7 @@ namespace LSS.Services
                     }
 
                     // Add to the result container
-                    Results.Add(Result);
+                    Answer.Results.Add(Result);
 
                     // Keep running if the same course needs to be scheduled additional times
                     if (currentIterationForThisInput++ < CurrentInput.NumTimesToRun - 1)
@@ -194,39 +208,7 @@ namespace LSS.Services
                     }
                 }
             }
-            if (ShowDebugMessages)
-            {
-                Console.WriteLine("Optimizer Successful Results");
-                ConsoleTable.From<OptimizerResultPrintable>(Results.Select(result => new OptimizerResultPrintable(result))).Write(Format.MarkDown);
-                Console.WriteLine("");
-            }
-
-            if (Inputs.Count(input => !input.Succeeded) > 0 && ShowDebugMessages)
-            {
-                Console.WriteLine("Optimizer Failed Results");
-                ConsoleTable.From<OptimizerInput>(Inputs.Where(input => !input.Succeeded)).Write(Format.MarkDown);
-                Console.WriteLine();
-            }
-
-            // Add the results to the table
-            foreach(var result in Results)
-            {
-                result.CreationTimestamp = DateTime.Today;
-                context.Entry(result).State = result.ID == 0 ? EntityState.Added : EntityState.Modified;
-            }
-            foreach(var input in Inputs)
-            {
-                context.Entry(input).State = input.Id == 0 ? EntityState.Added : EntityState.Modified;
-            }
-            foreach(var input in WillAlwaysFail)
-            {
-                context.Entry(input).State = input.Id == 0 ? EntityState.Added : EntityState.Modified;
-            }
-            // Save data to the context
-            //context.SaveChanges();
-            
-
-            if (ShowDebugMessages) Console.WriteLine("Optimization Complete.\n");
+            return Answer;
         }
 
         internal OptimizerScheduleResults OptimizeRecursion(OptimizerScheduleResults IncomingResults, int InputIndex,

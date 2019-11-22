@@ -26,9 +26,13 @@ namespace LSS.Models
             ConsoleTable.From<OptimizerResultPrintable>(Results.Select(result => new OptimizerResultPrintable(result))).Write(Format.MarkDown);
             Console.WriteLine("");
 
-            Console.WriteLine("Optimizer Failed Results");
-            ConsoleTable.From<OptimizerInput>(Inputs.Where(input => input.Succeeded == false)).Write(Format.MarkDown);
-            Console.WriteLine();
+            if (Inputs.Where(input => !input.Succeeded).ToList().Count > 0)
+            {
+                Console.WriteLine("Optimizer Failed Results");
+                ConsoleTable.From<OptimizerInputPrintable>(Inputs.Where(input => input.Succeeded == false).Select(input => new OptimizerInputPrintable(input))).Write(Format.MarkDown);
+                Console.WriteLine();
+            }
+
         }
     }
 }

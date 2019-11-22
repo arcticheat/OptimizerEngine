@@ -1,7 +1,9 @@
-﻿using LSS.Models;
+﻿using ConsoleTables;
+using LSS.Models;
 using Microsoft.EntityFrameworkCore;
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
@@ -28,12 +30,6 @@ namespace LSS.Services
         {
             MyEngine = MyBuilder.Build();
 
-            Console.WriteLine("Please review the data the optimizer engine will be using above.\nPress Enter when ready to proceed.");
-            do
-            {
-
-            } while (Console.ReadKey().Key != ConsoleKey.Enter);
-
             var watch = new System.Diagnostics.Stopwatch();
             if (ShowDebugMessages) watch = System.Diagnostics.Stopwatch.StartNew();
 
@@ -45,56 +41,55 @@ namespace LSS.Services
             int counter = 1;
             while (ThreadInProgress)
             {
-                var status = MyEngine.GetStatus(counter++.ToString(), watch.Elapsed);
-                Console.WriteLine(status);
-                System.Threading.Thread.Sleep(4000);
+                if (MyEngine.MyPriority != Priority.FirstAvailable)
+                {
+                    var status = MyEngine.GetStatus(counter++.ToString(), watch.Elapsed);
+                    Console.WriteLine(status);
+                    System.Threading.Thread.Sleep(4000);
+                }
             }
             thread.Join();
 
-            if (MyEngine.MyPriority != Priority.FirstAvailable)
+            // Add the results to the table
+            foreach (var result in MyResults.Results)
             {
-                // Add the results to the table
-                foreach (var result in MyResults.Results)
-                {
-                    result.CreationTimestamp = DateTime.Today;
-                    context.Entry(result).State = result.ID == 0 ? EntityState.Added : EntityState.Modified;
-                }
-                foreach (var input in MyResults.Inputs)
-                {
-                    context.Entry(input).State = input.Id == 0 ? EntityState.Added : EntityState.Modified;
-                }
-                //context.SaveChanges();
-
-                if (ShowDebugMessages)
-                {
-                    Console.WriteLine("Optimization Complete.\n");
-                    MyResults.Print();
-                    watch.Stop();
-                    Console.WriteLine(MyEngine.GetStatus("Final", watch.Elapsed));
-                }
+                result.CreationTimestamp = DateTime.Today;
+                context.Entry(result).State = result.ID == 0 ? EntityState.Added : EntityState.Modified;
             }
-            
+            foreach (var input in MyResults.Inputs)
+            {
+                context.Entry(input).State = input.Id == 0 ? EntityState.Added : EntityState.Modified;
+            }
+            //context.SaveChanges();
+
+            if (ShowDebugMessages)
+            {
+                watch.Stop();
+                Console.WriteLine("Optimization Complete.\n");
+                if (MyEngine.MyPriority != Priority.FirstAvailable)
+                    Console.WriteLine(MyEngine.GetStatus("Final", watch.Elapsed));
+                Console.WriteLine("Original Optimizer Inputs");
+                ConsoleTable.From<OptimizerInputPrintable>(MyEngine.Inputs.Select(x => new OptimizerInputPrintable(x))).Write(Format.MarkDown);
+                Console.WriteLine("");
+                Console.WriteLine("Preexisting Schedule");
+                ConsoleTable.From<ScheduledClassPrintable>(MyEngine.CurrentSchedule.Select(c => new ScheduledClassPrintable(c))).Write(Format.MarkDown);
+                Console.WriteLine("");
+                MyResults.Print();
+            }
         }
 
-        async void Optimize()
+        void Optimize()
         {
             if (MyEngine.MyPriority == Priority.FirstAvailable)
-                MyEngine.OptimizeGreedy(MyBuilder.IsRoomUnavailable, MyBuilder.IsInstructorUnavailable,
+                MyResults = MyEngine.OptimizeGreedy(MyBuilder.IsRoomUnavailable, MyBuilder.IsInstructorUnavailable,
                     MyBuilder.CurrentlyReleased, MyBuilder.LocallyTaughtCoursesPerDay);
             else
             {
-                try
-                {
-                    MyResults = MyEngine.OptimizeRecursion(MyBuilder.StartingResults, 0, MyBuilder.IsInstructorUnavailable,
-    MyBuilder.IsRoomUnavailable, MyBuilder.CurrentlyReleased, MyBuilder.LocallyTaughtCoursesPerDay, 0);
-                }
-                catch (Exception e)
-                {
-                    Console.WriteLine(e.StackTrace);
-                    
-                }
-
+                MyResults = MyEngine.OptimizeRecursion(MyBuilder.StartingResults, 0, MyBuilder.IsInstructorUnavailable,
+                    MyBuilder.IsRoomUnavailable, MyBuilder.CurrentlyReleased, MyBuilder.LocallyTaughtCoursesPerDay, 0);
+               
             }
+            MyResults.Inputs.AddRange(MyEngine.WillAlwaysFail);
                 
             ThreadInProgress = false;
             return;

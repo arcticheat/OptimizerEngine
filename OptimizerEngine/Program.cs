@@ -14,7 +14,7 @@ namespace LSS
         {
             bool askForInput = false;
             bool debug = true;
-            Priority priority = Priority.MinimizeForeignInstructorCount;
+            Priority priority = Priority.MinimizeInstructorTravelDistance;
 
             DateTime StartDate = Convert.ToDateTime("1/1/2020");
             DateTime EndDate = Convert.ToDateTime("3/31/2020");
