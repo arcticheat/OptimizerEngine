@@ -71,6 +71,7 @@ namespace LSS.Models
         //Point in string form
         [NotMapped]
         public string PointName { get; set; }
+
     }
 
     /// <summary>

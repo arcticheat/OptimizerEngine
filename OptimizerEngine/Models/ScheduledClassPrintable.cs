@@ -8,6 +8,7 @@ namespace LSS.Models
     {
         //ID
         public int ID { get; set; }
+        public int CourseID { get; set; }
 
         //Course ID
         public string CourseCode { get; set; }
@@ -42,6 +43,7 @@ namespace LSS.Models
         public ScheduledClassPrintable(ScheduledClass scheduled)
         {
             ID = scheduled.ID;
+            CourseID = scheduled.CourseID;
             CourseCode = scheduled.CourseCode;
             LocationCode = scheduled.Location;
             RoomID = scheduled.RoomID;

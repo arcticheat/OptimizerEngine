@@ -65,15 +65,35 @@ namespace LSS.Services
             if (ShowDebugMessages)
             {
                 watch.Stop();
-                Console.WriteLine("Optimization Complete.\n");
+                Console.WriteLine("\nOptimization Complete.\n");
                 if (MyEngine.MyPriority != Priority.FirstAvailable)
-                    Console.WriteLine(MyEngine.GetStatus("Final", watch.Elapsed));
-                Console.WriteLine("Original Optimizer Inputs");
+                    Console.WriteLine(MyEngine.GetStatus("Final", watch.Elapsed) + "\n");
+
+                Console.WriteLine("\nOriginal Optimizer Inputs");
                 ConsoleTable.From<OptimizerInputPrintable>(MyEngine.Inputs.Select(x => new OptimizerInputPrintable(x))).Write(Format.MarkDown);
                 Console.WriteLine("");
                 Console.WriteLine("Preexisting Schedule");
                 ConsoleTable.From<ScheduledClassPrintable>(MyEngine.CurrentSchedule.Select(c => new ScheduledClassPrintable(c))).Write(Format.MarkDown);
-                Console.WriteLine("");
+                switch (MyEngine.MyPriority)
+                {
+                    case Priority.Default:
+                        Console.WriteLine($"Total classes scheduled: {MyResults.Results.Count} out of {MyEngine.InputCount}.\n");
+                        break;
+                    case Priority.FirstAvailable:
+                        break;
+                    case Priority.MaximizeInstructorLongestToTeach:
+                        Console.WriteLine($"");
+                        break;
+                    case Priority.MaximizeSpecializedInstructors:
+                        Console.WriteLine($"Between all assigned instructors for this answer, they have a total of {MyResults.OptimizationScore} qualifications.\n");
+                        break;
+                    case Priority.MinimizeForeignInstructorCount:
+                        Console.WriteLine($"{MyResults.OptimizationScore} instructors will have to travel to fulfill these assignments.\n");
+                        break;
+                    case Priority.MinimizeInstructorTravelDistance:
+                        Console.WriteLine($"Instructors will have to travel a total of {MyResults.OptimizationScore} miles to fulfill these assignments.\n");
+                        break;
+                }
                 MyResults.Print();
             }
         }

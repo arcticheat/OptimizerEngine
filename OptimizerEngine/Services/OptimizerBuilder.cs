@@ -1,5 +1,6 @@
 ﻿using ConsoleTables;
 using LSS.Models;
+using MoreLinq;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -18,6 +19,8 @@ namespace LSS.Services
         public Dictionary<string, Dictionary<string, bool>> IsInstructorUnavailable = new Dictionary<string, Dictionary<string, bool>>();
         public Dictionary<int, Dictionary<string, int>> CurrentlyReleased = new Dictionary<int, Dictionary<string, int>>();
         public Dictionary<int, Dictionary<string, List<int>>> LocallyTaughtCoursesPerDay = new Dictionary<int, Dictionary<string, List<int>>>();
+        public Dictionary<string, Dictionary<int, DateTime>> instructorToClassToLastTimeTaught = new Dictionary<string, Dictionary<int, DateTime>>();
+
         public string TIME_FORMAT = "MM/dd/yyyy";
 
         public OptimizerScheduleResults StartingResults { get; internal set; }
@@ -54,11 +57,10 @@ namespace LSS.Services
 
             // Add to each course the instructors qualified to teach them
             context.InstructorStatus.
-                Where(status => status.Deleted == false).ToList().
+                Where(status => status.Deleted == false && Engine.Instructors.Any(instr => instr.Username == status.InstructorID)).ToList().
                 ForEach(status => Engine.CourseCatalog.
                 Where(course => course.ID == status.CourseID)
-                .FirstOrDefault().
-                QualifiedInstructors.Add(status.InstructorID));
+                .First().QualifiedInstructors.Add(status.InstructorID));
 
             // Add to each instructor the amount of courses they can teach
             context.InstructorStatus.
@@ -353,6 +355,55 @@ namespace LSS.Services
                 }
             }
 
+            if (Engine.MyPriority == Priority.MaximizeInstructorLongestToTeach)
+            {
+                var completeAssignments = context.InstructorOfClass.OrderBy(i => i.StartDate).ToArray();
+                foreach(var a in completeAssignments)
+                {
+                    if (instructorToClassToLastTimeTaught.ContainsKey(a.UserID))
+                    {
+                        if (instructorToClassToLastTimeTaught[a.UserID].ContainsKey(a.ClassID))
+                            instructorToClassToLastTimeTaught[a.UserID][a.ClassID] = a.EndDate;
+                        else
+                            instructorToClassToLastTimeTaught[a.UserID].Add(a.ClassID, a.EndDate);
+
+                    }
+                    else
+                    {
+                        instructorToClassToLastTimeTaught.Add(a.UserID, new Dictionary<int, DateTime>());
+                        instructorToClassToLastTimeTaught[a.UserID].Add(a.ClassID, a.EndDate);
+                    }
+                }
+                if (ShowDebugMessages)
+                {
+                    List<string> Headers;
+                    ConsoleTable table;
+                    Headers = new List<string> { "Username" };
+                    Headers.Add("CourseID: Last Taught");
+                    table = new ConsoleTable(Headers.ToArray());
+                    foreach (var InstructorPair in instructorToClassToLastTimeTaught)
+                    {
+                        foreach(var sublist in OptimizerUtilities.Split(InstructorPair.Value.ToList(), 20))
+                        {
+                            var row = new List<string> { InstructorPair.Key.ToString() };
+                            var rowString = "";
+                            InstructorPair.Value.ForEach(p => {
+                                if (sublist.Contains(p))
+                                    rowString += $"{p.Key}: {p.Value.ToString("MM/dd")}; ";
+                            }
+                            );
+                            row.Add(rowString);
+                            table.AddRow(row.ToArray());
+                        }
+                    }
+                    Console.WriteLine("IsInstructorUnavailable");
+                    table.Write(Format.MarkDown);
+                    
+                }
+
+            }
+
+
             if (ShowDebugMessages) Console.WriteLine("Data loading complete.\n");
 
             if (ShowDebugMessages) Console.WriteLine("Checking if any inputs are impossible...");
@@ -396,6 +447,8 @@ namespace LSS.Services
                 case Priority.MaximizeInstructorLongestToTeach:
                     break;
                 case (Priority.MaximizeSpecializedInstructors):
+                    Engine.BestPossibleScore = Engine.Instructors.MinBy(i => i.QualificationCount).First().QualificationCount * Engine.InputCount;
+                    if (Engine.BestPossibleScore == 0) Engine.BestPossibleScore = Engine.InputCount;
                     break;
                 case (Priority.MinimizeForeignInstructorCount):
                     // Set the best answer to 0, meaning 0 instructors to travel
