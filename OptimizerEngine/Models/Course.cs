@@ -7,6 +7,7 @@ using System.Threading.Tasks;
 
 namespace LSS.Models
 {
+    [Serializable]
     public class Course
     {
         //ID

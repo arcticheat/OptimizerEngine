@@ -98,6 +98,8 @@ namespace LSS.Models
 
         [NotMapped]
         public string Building { get; set; }
+        [NotMapped]
+        public DateTime LastTimeTaughtByInstructor { get; set; }
 
         public OptimizerResult()
         {

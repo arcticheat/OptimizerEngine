@@ -77,12 +77,12 @@ namespace LSS.Services
                 switch (MyEngine.MyPriority)
                 {
                     case Priority.Default:
-                        Console.WriteLine($"Total classes scheduled: {MyResults.Results.Count} out of {MyEngine.InputCount}.\n");
+                        Console.WriteLine($"Total classes scheduled: {MyResults.Results.Count} out of {MyBuilder.OriginalInputCount}.\n");
                         break;
                     case Priority.FirstAvailable:
                         break;
                     case Priority.MaximizeInstructorLongestToTeach:
-                        Console.WriteLine($"");
+                        Console.WriteLine($"The total time between all instructor assignments and the last time they taught the course is {MyEngine.CurrentBestAnswer.OptimizationScore} days.\n");
                         break;
                     case Priority.MaximizeSpecializedInstructors:
                         Console.WriteLine($"Between all assigned instructors for this answer, they have a total of {MyResults.OptimizationScore} qualifications.\n");
@@ -105,13 +105,15 @@ namespace LSS.Services
                     MyBuilder.CurrentlyReleased, MyBuilder.LocallyTaughtCoursesPerDay);
             else if (MyEngine.MyPriority == Priority.MaximizeInstructorLongestToTeach)
             {
-                MyResults = MyEngine.OptimizeLongestToTeach(MyBuilder.StartingResults, 0,  MyBuilder.IsInstructorUnavailable, MyBuilder.IsRoomUnavailable,
-                    MyBuilder.CurrentlyReleased, MyBuilder.LocallyTaughtCoursesPerDay, 0, MyBuilder.instructorToClassToLastTimeTaught);
+                MyEngine.OptimizeLongestToTeach(MyBuilder.StartingResults, 0,  MyBuilder.IsInstructorUnavailable, MyBuilder.IsRoomUnavailable,
+                    MyBuilder.CurrentlyReleased, MyBuilder.LocallyTaughtCoursesPerDay, 0, MyEngine.CourseCatalog);
+                MyResults = MyEngine.CurrentBestAnswer;
             }
             else
             {
-                MyResults = MyEngine.OptimizeRecursion(MyBuilder.StartingResults, 0, MyBuilder.IsInstructorUnavailable,
+                MyEngine.OptimizeRecursion(MyBuilder.StartingResults, 0, MyBuilder.IsInstructorUnavailable,
                     MyBuilder.IsRoomUnavailable, MyBuilder.CurrentlyReleased, MyBuilder.LocallyTaughtCoursesPerDay, 0);
+                MyResults = MyEngine.CurrentBestAnswer;
                
             }
             MyResults.Inputs.AddRange(MyEngine.WillAlwaysFail);

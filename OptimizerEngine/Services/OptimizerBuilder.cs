@@ -20,8 +20,8 @@ namespace LSS.Services
         public Dictionary<int, Dictionary<string, int>> CurrentlyReleased = new Dictionary<int, Dictionary<string, int>>();
         public Dictionary<int, Dictionary<string, List<int>>> LocallyTaughtCoursesPerDay = new Dictionary<int, Dictionary<string, List<int>>>();
         public Dictionary<string, Dictionary<int, DateTime>> instructorToClassToLastTimeTaught = new Dictionary<string, Dictionary<int, DateTime>>();
-
         public string TIME_FORMAT = "MM/dd/yyyy";
+        public int OriginalInputCount;
 
         public OptimizerScheduleResults StartingResults { get; internal set; }
 
@@ -60,7 +60,7 @@ namespace LSS.Services
                 Where(status => status.Deleted == false && Engine.Instructors.Any(instr => instr.Username == status.InstructorID)).ToList().
                 ForEach(status => Engine.CourseCatalog.
                 Where(course => course.ID == status.CourseID)
-                .First().QualifiedInstructors.Add(status.InstructorID, DateTime.Now));
+                .First().QualifiedInstructors.Add(status.InstructorID, DateTime.MinValue));
 
             // Add to each instructor the amount of courses they can teach
             context.InstructorStatus.
@@ -104,6 +104,8 @@ namespace LSS.Services
                             Selected = input.Selected
                         }).ToList<OptimizerInput>();
 
+            OriginalInputCount = Engine.Inputs.Count;
+
             // Scheduled/Planned classes
             // Only grab classes within the optimzer time range and that aren't cancelled
             Engine.CurrentSchedule = context.ScheduledClass
@@ -121,6 +123,7 @@ namespace LSS.Services
                     (DateTime.Compare(i.EndDate, Engine.StartDate) >= 0 && DateTime.Compare(i.EndDate, Engine.EndDate) <= 0) ||
                     (DateTime.Compare(i.StartDate, Engine.StartDate) < 0 && DateTime.Compare(i.EndDate, Engine.EndDate) > 0)
                     )).ToList();
+
             // Remove instructor assignments if the instructor is not in the user table
             Engine.InstructorAssignments.RemoveAll(assignment => !Engine.Instructors.Any(instructor => instructor.Username == assignment.UserID));
 
@@ -355,50 +358,63 @@ namespace LSS.Services
                 }
             }
 
+            // Set the last day each instructor taught a course if the priority is set
             if (Engine.MyPriority == Priority.MaximizeInstructorLongestToTeach)
             {
+                var CompleteSchedule = context.ScheduledClass.ToArray();
+                // Obtain every instructor assignment in the database
                 var completeAssignments = context.InstructorOfClass.OrderBy(i => i.StartDate).ToArray();
+                Console.WriteLine("Calculating the last time each instructor taught a course...");
                 foreach(var a in completeAssignments)
                 {
-                    Engine.CourseCatalog.Contains(Engine.Sche)
-
-                    if (instructorToClassToLastTimeTaught.ContainsKey(a.UserID))
+                    if (CompleteSchedule.Any(s => s.ID == a.ClassID))
                     {
-                        if (instructorToClassToLastTimeTaught[a.UserID].ContainsKey(a.ClassID))
-                            instructorToClassToLastTimeTaught[a.UserID][a.ClassID] = a.EndDate;
-                        else
-                            instructorToClassToLastTimeTaught[a.UserID].Add(a.ClassID, a.EndDate);
-
-                    }
-                    else
-                    {
-                        instructorToClassToLastTimeTaught.Add(a.UserID, new Dictionary<int, DateTime>());
-                        instructorToClassToLastTimeTaught[a.UserID].Add(a.ClassID, a.EndDate);
+                        // grab the class that corresponds to the assignment
+                        ScheduledClass correspondingClass = CompleteSchedule.First(s => s.ID == a.ClassID);
+                        if (Engine.CourseCatalog.Any(c => c.ID == correspondingClass.CourseID))
+                        {
+                            // get the course info 
+                            var CourseInfo = Engine.CourseCatalog.First(c => c.ID == CompleteSchedule.First(s => s.ID == a.ClassID).CourseID);
+                            if (CourseInfo.QualifiedInstructors.ContainsKey(a.UserID))
+                            {
+                                // if this assignment ends after the last recorded time the instructor taught this course, update 
+                                // the last time taugth the course to the end of this assignment
+                                if (DateTime.Compare(CourseInfo.QualifiedInstructors[a.UserID], a.EndDate) < 0)
+                                    CourseInfo.QualifiedInstructors[a.UserID] = a.EndDate;
+                            }
+                        }
                     }
                 }
+                // Limit Course catalog to courses just listed in the input
+                Engine.CourseCatalog = Engine.CourseCatalog.Where(c => Engine.Inputs.Any(i => i.CourseId == c.ID)).ToList();
+
+                Console.WriteLine("Done.");
                 if (ShowDebugMessages)
                 {
                     List<string> Headers;
                     ConsoleTable table;
-                    Headers = new List<string> { "Username" };
-                    Headers.Add("CourseID: Last Taught");
+                    Headers = new List<string> { "CourseCode" };
+                    Headers.Add("Instructor FileNumber: Last Taught");
                     table = new ConsoleTable(Headers.ToArray());
-                    foreach (var InstructorPair in instructorToClassToLastTimeTaught)
+                    foreach (var Course in Engine.CourseCatalog)
                     {
-                        foreach(var sublist in OptimizerUtilities.Split(InstructorPair.Value.ToList(), 20))
+                        foreach(var sublist in OptimizerUtilities.Split(Course.QualifiedInstructors.ToList(), 8))
                         {
-                            var row = new List<string> { InstructorPair.Key.ToString() };
+                            var row = new List<string> { Course.Code.ToString() };
                             var rowString = "";
-                            InstructorPair.Value.ToList().ForEach(p => {
+                            Course.QualifiedInstructors.ToList().ForEach(p => {
                                 if (sublist.Contains(p))
-                                    rowString += $"{p.Key}: {p.Value.ToString("MM/dd")}; ";
+                                    if (p.Value == DateTime.MinValue)
+                                        rowString += $"{p.Key}: {"Never Taught"}; ";
+                                    else
+                                        rowString += $"{p.Key}: {p.Value.ToString("MM/dd/yyyy")}; ";
                             }
                             );
                             row.Add(rowString);
                             table.AddRow(row.ToArray());
                         }
                     }
-                    Console.WriteLine("IsInstructorUnavailable");
+                    Console.WriteLine("Last Time A Course Was Taught By Who");
                     table.Write(Format.MarkDown);
                     
                 }
@@ -447,6 +463,7 @@ namespace LSS.Services
             switch (Engine.MyPriority)
             {
                 case Priority.MaximizeInstructorLongestToTeach:
+                    Engine.BestPossibleScore = int.MaxValue;
                     break;
                 case (Priority.MaximizeSpecializedInstructors):
                     Engine.BestPossibleScore = Engine.Instructors.MinBy(i => i.QualificationCount).First().QualificationCount * Engine.InputCount;
@@ -459,7 +476,7 @@ namespace LSS.Services
                     foreach (var input in Engine.Inputs)
                     {
                         var CourseInfo = Engine.CourseCatalog.Where(course => course.ID == input.CourseId).First();
-                        if (Engine.Locations.First(z => z.ID == input.LocationIdLiteral).LocalInstructors.Any(x => CourseInfo.QualifiedInstructors.Any(y => x == y)))
+                        if (Engine.Locations.First(z => z.ID == input.LocationIdLiteral).LocalInstructors.Any(x => CourseInfo.QualifiedInstructors.Any(y => x == y.Key)))
                         {
                             Engine.BestPossibleScore -= input.NumTimesToRun;
                         }

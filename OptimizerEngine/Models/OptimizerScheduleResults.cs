@@ -11,7 +11,7 @@ namespace LSS.Models
     {
         public List<OptimizerResult> Results;
         public List<OptimizerInput> Inputs;
-        public int OptimizationScore;
+        public long OptimizationScore;
 
         public OptimizerScheduleResults(OptimizerScheduleResults op)
         {

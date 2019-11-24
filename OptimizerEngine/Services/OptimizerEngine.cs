@@ -111,12 +111,12 @@ namespace LSS.Services
                     foreach (var Instructor in CourseInfo.QualifiedInstructors)
                     {
                         // Determine if this instructor is available for the range
-                        if (IsInstructorAvailableForDateRange(Instructor, ValidStartDate, ValidEndDate, IsInstructorUnavailable))
+                        if (IsInstructorAvailableForDateRange(Instructor.Key, ValidStartDate, ValidEndDate, IsInstructorUnavailable))
                         {
                             if (ShowDebugMessages) Console.WriteLine($"The instructor {Instructor} is available.");
-                            Result.InstrUsername = Instructor;
+                            Result.InstrUsername = Instructor.Key;
                             // Set the result status to using a local instructor
-                            Result.UsingLocalInstructor = Instructors.Where(instr => instr.Username == Instructor).First().PointID == CurrentInput.LocationIdLiteral;
+                            Result.UsingLocalInstructor = Instructors.Where(instr => instr.Username == Instructor.Key).First().PointID == CurrentInput.LocationIdLiteral;
                             break;
                         }
                     }
@@ -296,23 +296,23 @@ namespace LSS.Services
                     var ValidEndDate = Utilities.getNextBusinessDate(ValidStartDate, CurrentInput.LengthDays - 1);
 
                     // Sort the instructors by the instructors to find the best answer sooner
-                    var SortedQualifiedInstructors = new List<string>();
+                    var SortedQualifiedInstructors = new List<KeyValuePair<string, DateTime>>();
                     switch (MyPriority)
                     {
                         case (Priority.MaximizeSpecializedInstructors):
                             SortedQualifiedInstructors = CourseInfo.QualifiedInstructors.
-                                OrderBy(x => Instructors.First(y => y.Username == x).QualificationCount).ToList();
+                                OrderBy(x => Instructors.First(y => y.Username == x.Key).QualificationCount).ToList();
                             break;
                         case (Priority.MinimizeForeignInstructorCount):
                             SortedQualifiedInstructors = CourseInfo.QualifiedInstructors.
-                                OrderByDescending(x => Locations.First(y => y.ID == CurrentInput.LocationIdLiteral).LocalInstructors.Contains(x)).ToList();
+                                OrderByDescending(x => Locations.First(y => y.ID == CurrentInput.LocationIdLiteral).LocalInstructors.Contains(x.Key)).ToList();
                             break;
                         case (Priority.MinimizeInstructorTravelDistance):
                             SortedQualifiedInstructors = CourseInfo.QualifiedInstructors.
-                                OrderByDescending(x => Locations.First(y => y.ID == CurrentInput.LocationIdLiteral).LocalInstructors.Contains(x)).ToList();
+                                OrderByDescending(x => Locations.First(y => y.ID == CurrentInput.LocationIdLiteral).LocalInstructors.Contains(x.Key)).ToList();
                             break;
                         default:
-                            SortedQualifiedInstructors = CourseInfo.QualifiedInstructors;
+                            SortedQualifiedInstructors = CourseInfo.QualifiedInstructors.ToList();
                             break;
                     }
 
@@ -320,7 +320,7 @@ namespace LSS.Services
                     foreach (var Instructor in SortedQualifiedInstructors)
                     {
                         // Determine if this instructor is available for the range
-                        if (IsInstructorAvailableForDateRange(Instructor, ValidStartDate, ValidEndDate, IsInstructorUnavailable))
+                        if (IsInstructorAvailableForDateRange(Instructor.Key, ValidStartDate, ValidEndDate, IsInstructorUnavailable))
                         {
                             NoInstructor = false;
 
@@ -353,8 +353,8 @@ namespace LSS.Services
                                         Location = CurrentInput.LocationID,
                                         CourseCode = CurrentInput.CourseCode,
                                         RoomID = RoomID,
-                                        InstrUsername = Instructor,
-                                        UsingLocalInstructor = Instructors.Where(instr => instr.Username == Instructor).First().PointID == CurrentInput.LocationIdLiteral,
+                                        InstrUsername = Instructor.Key,
+                                        UsingLocalInstructor = Instructors.Where(instr => instr.Username == Instructor.Key).First().PointID == CurrentInput.LocationIdLiteral,
                                         inputID = CurrentInput.Id
                                     };
 
@@ -471,7 +471,7 @@ namespace LSS.Services
             Dictionary<string, Dictionary<string, bool>> IsInstructorUnavailable, Dictionary<int, Dictionary<string, bool>> IsRoomUnavailable,
             Dictionary<int, Dictionary<string, int>> CurrentlyReleased,
             Dictionary<int, Dictionary<string, List<int>>> LocallyTaughtCoursesPerDay,
-            int CurrentDepth, Dictionary<string, Dictionary<int, DateTime>> InstructorToClassToLastTimeTaught)
+            int CurrentDepth, List<Course> Catalog)
         {
             // Always check if the best answer is already found
             if (IsABestAnswerFound())
@@ -514,7 +514,7 @@ namespace LSS.Services
                 var ReleaseRate = Locations.Where(location => location.ID == CurrentInput.LocationIdLiteral).First().ReleaseRate;
 
                 // Obtain the information about this course in the catalog
-                var CourseInfo = CourseCatalog.Where(course => course.ID == CurrentInput.CourseId).First();
+                var CourseInfo = Catalog.Where(course => course.ID == CurrentInput.CourseId).First();
 
                 // Obtain all possible start dates (restricted by location release rate and course length)
                 var reason = "";
@@ -533,18 +533,14 @@ namespace LSS.Services
                     // Set the end date for this range based off of the course length
                     var ValidEndDate = Utilities.getNextBusinessDate(ValidStartDate, CurrentInput.LengthDays - 1);
 
-                    // Sort the instructors by the instructors to find the best answer sooner
-                    var SortedQualifiedInstructors = new List<string>();
-
-                    //TODO added instructor sorting for longest to teach
-                    SortedQualifiedInstructors = CourseInfo.QualifiedInstructors;
+                    // Sort the instructors by the last time they taught this course, with the longest taught being first
+                    var SortedQualifiedInstructors = CourseInfo.QualifiedInstructors.OrderBy(i => i.Value).ToList();
                     
-
                     // Loop through all qualified instructors for this course
                     foreach (var Instructor in SortedQualifiedInstructors)
                     {
                         // Determine if this instructor is available for the range
-                        if (IsInstructorAvailableForDateRange(Instructor, ValidStartDate, ValidEndDate, IsInstructorUnavailable))
+                        if (IsInstructorAvailableForDateRange(Instructor.Key, ValidStartDate, ValidEndDate, IsInstructorUnavailable))
                         {
                             NoInstructor = false;
 
@@ -577,9 +573,10 @@ namespace LSS.Services
                                         Location = CurrentInput.LocationID,
                                         CourseCode = CurrentInput.CourseCode,
                                         RoomID = RoomID,
-                                        InstrUsername = Instructor,
-                                        UsingLocalInstructor = Instructors.Where(instr => instr.Username == Instructor).First().PointID == CurrentInput.LocationIdLiteral,
-                                        inputID = CurrentInput.Id
+                                        InstrUsername = Instructor.Key,
+                                        UsingLocalInstructor = Instructors.Where(instr => instr.Username == Instructor.Key).First().PointID == CurrentInput.LocationIdLiteral,
+                                        inputID = CurrentInput.Id,
+                                        LastTimeTaughtByInstructor = Catalog.First(c => c.ID == CurrentInput.CourseId).QualifiedInstructors[Instructor.Key]
                                     };
 
                                     NodesPerDepth[CurrentDepth] += 1;
@@ -591,11 +588,15 @@ namespace LSS.Services
                                     var IIUCopy = OptimizerUtilities.DeepClone(IsInstructorUnavailable);
                                     var IRUCopy = OptimizerUtilities.DeepClone(IsRoomUnavailable);
                                     var LTCPDCopy = OptimizerUtilities.DeepClone(LocallyTaughtCoursesPerDay);
+                                    var CatalogCopy = OptimizerUtilities.DeepClone(Catalog);
 
 
                                     //update the data container copies with the scheduling info for this result
                                     UpdateMatrices(Result.StartDate, Result.EndDate, CurrentInput.LocationIdLiteral, MaxClassSize, Result.InstrUsername, Result.RoomID, Result.UsingLocalInstructor,
                                         (int)CourseInfo.ID, ref CRCopy, ref IIUCopy, ref IRUCopy, ref LTCPDCopy);
+
+                                    // Update the instructor in the course catalog so that the last time they taught the course is the last day of the result
+                                    CatalogCopy.First(c => c.ID == CurrentInput.CourseId).QualifiedInstructors[Instructor.Key] = Result.EndDate;
 
                                     // Add the result
                                     MyResults.Results.Add(Result);
@@ -604,11 +605,11 @@ namespace LSS.Services
                                     // Add the child's answer 
                                     // repeat this index if there are more times to run
                                     if (MyResults.Inputs[InputIndex].RemainingRuns > 0)
-                                        SubNodeAnswers.Add(OptimizeRecursion(MyResults, InputIndex, IIUCopy, IRUCopy, CRCopy, LTCPDCopy, CurrentDepth + 1));
+                                        SubNodeAnswers.Add(OptimizeLongestToTeach(MyResults, InputIndex, IIUCopy, IRUCopy, CRCopy, LTCPDCopy, CurrentDepth + 1, CatalogCopy));
                                     else
                                     {
                                         MyResults.Inputs[InputIndex].Succeeded = true;
-                                        SubNodeAnswers.Add(OptimizeRecursion(MyResults, InputIndex + 1, IIUCopy, IRUCopy, CRCopy, LTCPDCopy, CurrentDepth + 1));
+                                        SubNodeAnswers.Add(OptimizeLongestToTeach(MyResults, InputIndex + 1, IIUCopy, IRUCopy, CRCopy, LTCPDCopy, CurrentDepth + 1, CatalogCopy));
                                     }
                                     // Predict if a better answer is even possible from here
                                     // First see if adding every single remaining class for the remainder of this branch would 
@@ -636,6 +637,7 @@ namespace LSS.Services
                 var IIUCopy_skip = OptimizerUtilities.DeepClone(IsInstructorUnavailable);
                 var IRUCopy_skip = OptimizerUtilities.DeepClone(IsRoomUnavailable);
                 var LTCPDCopy_skip = OptimizerUtilities.DeepClone(LocallyTaughtCoursesPerDay);
+                var CatalogCopy_skip = OptimizerUtilities.DeepClone(Catalog);
 
                 // Always consider not scheduling this course
                 //If there is a reason to skip, set it
@@ -655,8 +657,8 @@ namespace LSS.Services
                     ResultsNotScheduled.Inputs[InputIndex].Reason = "Skipped";
 
                 // Recursion on skipping this input
-                SubNodeAnswers.Add(OptimizeRecursion(ResultsNotScheduled, InputIndex + 1, IIUCopy_skip, IRUCopy_skip,
-                    CRCopy_skip, LTCPDCopy_skip, CurrentDepth + CurrentInput.RemainingRuns));
+                SubNodeAnswers.Add(OptimizeLongestToTeach(ResultsNotScheduled, InputIndex + 1, IIUCopy_skip, IRUCopy_skip,
+                    CRCopy_skip, LTCPDCopy_skip, CurrentDepth + CurrentInput.RemainingRuns, CatalogCopy_skip));
 
 
                 // Always check if the best answer is already found
@@ -728,7 +730,7 @@ namespace LSS.Services
                     foreach (var Instructor in CourseInfo.QualifiedInstructors)
                     {
                         // Determine if this instructor is available for the range
-                        if (IsInstructorAvailableForDateRange(Instructor, ValidStartDate, ValidEndDate, isInstructorUnavailable))
+                        if (IsInstructorAvailableForDateRange(Instructor.Key, ValidStartDate, ValidEndDate, isInstructorUnavailable))
                         {
                             // If an instructor is available continue
                             InstructorIsAvailable = true;
@@ -789,9 +791,12 @@ namespace LSS.Services
             switch (MyPriority)
             {
                 case Priority.MaximizeInstructorLongestToTeach:
-                    // TODO FINISH THIS PRIORITIZATION
                     var totalDaysBetweenLastAssignment = 0;
-                    incomingResults.OptimizationScore = incomingResults.Results.Count;
+                    foreach(var x in incomingResults.Results)
+                    {
+                        totalDaysBetweenLastAssignment += (x.StartDate.Date - x.LastTimeTaughtByInstructor.Date).Days;
+                    }
+                    incomingResults.OptimizationScore = totalDaysBetweenLastAssignment;
                     break;
                 case (Priority.MaximizeSpecializedInstructors):
                     var totalInstructorQualifications = 0;
