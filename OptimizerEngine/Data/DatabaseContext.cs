@@ -80,7 +80,7 @@ namespace LSS.Models
         {
             if (!optionsBuilder.IsConfigured)
             {
-                optionsBuilder.UseSqlServer("Data Source=DESKTOP-I5E3UDR;Initial Catalog=LSS_beta_copy_local;Integrated Security=true;");
+                optionsBuilder.UseSqlServer("Server=tcp:lss-server.database.windows.net,1433;Initial Catalog=Optimizer_LSS;Persist Security Info=False;User ID=team-msu;Password=tiR%jkyWub%N;MultipleActiveResultSets=True;Encrypt=True;TrustServerCertificate=False;Connection Timeout=30;");
             }
         }
     }

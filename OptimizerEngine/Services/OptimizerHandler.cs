@@ -103,6 +103,11 @@ namespace LSS.Services
             if (MyEngine.MyPriority == Priority.FirstAvailable)
                 MyResults = MyEngine.OptimizeGreedy(MyBuilder.IsRoomUnavailable, MyBuilder.IsInstructorUnavailable,
                     MyBuilder.CurrentlyReleased, MyBuilder.LocallyTaughtCoursesPerDay);
+            else if (MyEngine.MyPriority == Priority.MaximizeInstructorLongestToTeach)
+            {
+                MyResults = MyEngine.OptimizeLongestToTeach(MyBuilder.StartingResults, 0,  MyBuilder.IsInstructorUnavailable, MyBuilder.IsRoomUnavailable,
+                    MyBuilder.CurrentlyReleased, MyBuilder.LocallyTaughtCoursesPerDay, 0, MyBuilder.instructorToClassToLastTimeTaught);
+            }
             else
             {
                 MyResults = MyEngine.OptimizeRecursion(MyBuilder.StartingResults, 0, MyBuilder.IsInstructorUnavailable,

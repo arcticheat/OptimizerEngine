@@ -47,7 +47,7 @@ namespace LSS.Models
         [NotMapped]
         public CourseRequiredResources[] Resources {get; set;}
         [NotMapped]
-        public List<string> QualifiedInstructors = new List<string>();
+        public Dictionary<string, DateTime> QualifiedInstructors = new Dictionary<string, DateTime>();
         [NotMapped]
         public Dictionary<int, int?> RequiredResources = new Dictionary<int, int?>();
     }

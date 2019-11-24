@@ -60,7 +60,7 @@ namespace LSS.Services
                 Where(status => status.Deleted == false && Engine.Instructors.Any(instr => instr.Username == status.InstructorID)).ToList().
                 ForEach(status => Engine.CourseCatalog.
                 Where(course => course.ID == status.CourseID)
-                .First().QualifiedInstructors.Add(status.InstructorID));
+                .First().QualifiedInstructors.Add(status.InstructorID, DateTime.Now));
 
             // Add to each instructor the amount of courses they can teach
             context.InstructorStatus.
@@ -360,6 +360,8 @@ namespace LSS.Services
                 var completeAssignments = context.InstructorOfClass.OrderBy(i => i.StartDate).ToArray();
                 foreach(var a in completeAssignments)
                 {
+                    Engine.CourseCatalog.Contains(Engine.Sche)
+
                     if (instructorToClassToLastTimeTaught.ContainsKey(a.UserID))
                     {
                         if (instructorToClassToLastTimeTaught[a.UserID].ContainsKey(a.ClassID))
@@ -387,7 +389,7 @@ namespace LSS.Services
                         {
                             var row = new List<string> { InstructorPair.Key.ToString() };
                             var rowString = "";
-                            InstructorPair.Value.ForEach(p => {
+                            InstructorPair.Value.ToList().ForEach(p => {
                                 if (sublist.Contains(p))
                                     rowString += $"{p.Key}: {p.Value.ToString("MM/dd")}; ";
                             }
