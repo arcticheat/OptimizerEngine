@@ -7,6 +7,7 @@ using System.Linq;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
+using System.Diagnostics;
 
 namespace LSS.Services
 {
@@ -18,19 +19,21 @@ namespace LSS.Services
         private OptimizerScheduleResults MyResults;
         private bool ThreadInProgress;
         private DatabaseContext context;
+        private int counter = 1;
+        private Stopwatch watch;
         
         public OptimizerHandler(DatabaseContext _context, OptimizerEngineBuilder builder)
         {
             MyBuilder = builder;
             ShowDebugMessages = builder.ShowDebugMessages;
             context = _context;
+            watch = new System.Diagnostics.Stopwatch();
         }
 
         public void Run()
         {
             MyEngine = MyBuilder.Build();
 
-            var watch = new System.Diagnostics.Stopwatch();
             if (ShowDebugMessages) watch = System.Diagnostics.Stopwatch.StartNew();
 
             Console.WriteLine("Optimizing...");
@@ -38,9 +41,10 @@ namespace LSS.Services
             Thread thread = new Thread(() => Optimize());
             thread.Start();
             ThreadInProgress = true;
-            int counter = 1;
+            counter = 1;
             while (ThreadInProgress)
             {
+                //cancellationToken.ThrowIfCancellationRequested();
                 if (MyEngine.MyPriority != Priority.FirstAvailable)
                 {
                     var status = MyEngine.GetStatus(counter++.ToString(), watch.Elapsed);

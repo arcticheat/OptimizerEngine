@@ -729,6 +729,7 @@ namespace LSS.Services
                     bool InstructorIsAvailable = false;
                     foreach (var Instructor in CourseInfo.QualifiedInstructors)
                     {
+                        //Console.WriteLine("")
                         // Determine if this instructor is available for the range
                         if (IsInstructorAvailableForDateRange(Instructor.Key, ValidStartDate, ValidEndDate, isInstructorUnavailable))
                         {
@@ -750,10 +751,13 @@ namespace LSS.Services
                     // Loop through all local rooms for this location
                     // but only the rooms that have the right type and quantity of resources required by this course type
                     var RoomIsAvailable = false;
-                    foreach (var RoomID in Locations.Where(Loc => Loc.Code == CurrentInput.LocationID).First().
+
+                    foreach(var RoomID in Locations.Where(Loc => Loc.Code == CurrentInput.LocationID).First().
                         LocalRooms.Where(room => CourseInfo.RequiredResources.All(required =>
-                        Rooms[room].Resources_dict.ContainsKey(required.Key) && Rooms[room].Resources_dict[required.Key] >= required.Value)))
+                        Rooms[room].Resources_dict.ContainsKey(required.Key) && Rooms[room].Resources_dict[required.Key] != null ?
+                        Rooms[room].Resources_dict[required.Key] >= required.Value : true)))
                     {
+                        Console.WriteLine(RoomID);
                         // Determine if this room is available 
                         if (IsRoomAvailbleForDateRange(RoomID, ValidStartDate, ValidEndDate, isRoomUnavailable))
                         {

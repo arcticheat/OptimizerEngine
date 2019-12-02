@@ -18,6 +18,9 @@ namespace LSS.Models
         [NotMapped]
         public String CourseCode { get; set; }
 
+        [NotMapped]
+        public Course myCourse { get; set; }
+
         //Location ID of course
         public int LocationID { get; set; }
 

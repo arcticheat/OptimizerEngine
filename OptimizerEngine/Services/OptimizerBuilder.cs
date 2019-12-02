@@ -57,14 +57,14 @@ namespace LSS.Services
 
             // Add to each course the instructors qualified to teach them
             context.InstructorStatus.
-                Where(status => status.Deleted == false && Engine.Instructors.Any(instr => instr.Username == status.InstructorID)).ToList().
+                Where(status => status.Deleted == false && status.Qualification == 1 && Engine.Instructors.Any(instr => instr.Username == status.InstructorID)).ToList().
                 ForEach(status => Engine.CourseCatalog.
                 Where(course => course.ID == status.CourseID)
                 .First().QualifiedInstructors.Add(status.InstructorID, DateTime.MinValue));
 
             // Add to each instructor the amount of courses they can teach
             context.InstructorStatus.
-                Where(status => status.Deleted == false && Engine.Instructors.Any(y => y.Username == status.InstructorID)).ToList().
+                Where(status => status.Deleted == false && status.Qualification == 1 && Engine.Instructors.Any(y => y.Username == status.InstructorID)).ToList().
                 ForEach(status => Engine.Instructors.Where(x => x.Username == status.InstructorID).FirstOrDefault().QualificationCount++);
 
             // Add to each course the required resources it needs from a room
@@ -76,8 +76,9 @@ namespace LSS.Services
             Engine.Rooms = context.Room.ToDictionary(room => room.ID, room => room);
             // Add to each room the resources it has
             context.RoomHasResources.ToList().ForEach(resources => Engine.Rooms.
-            Where(room => room.Key == resources.RoomID).FirstOrDefault().Value.
-            Resources_dict[resources.ID] = resources.Amount);
+            Where(room => room.Value.ID == resources.RoomID).FirstOrDefault().Value.
+            Resources_dict[resources.ResourceID] = resources.Amount);
+
 
             // Get the optimizer input data
             Engine.Inputs = (from input in context.OptimizerInput
@@ -327,11 +328,7 @@ namespace LSS.Services
             {
                 foreach (var date in OptimizerUtilities.EachWeekDay(OptimizerUtilities.Max(exception.StartDate, Engine.StartDate), OptimizerUtilities.Min(exception.EndDate, Engine.EndDate)))
                 {
-                    if (WeekDaysInRange.Contains(exception.RequestForID))
-                    {
-                        //Engine.IsInstructorUnavailable[Engine.InstructorIndexMap[exception.RequestForId], Engine.DateIndexMap[date.ToString(Engine.TIME_FORMAT)]] = true;
-                        IsInstructorUnavailable[exception.RequestForID][date.ToString(TIME_FORMAT)] = true;
-                    }
+                    IsInstructorUnavailable[exception.RequestForID][date.ToString(TIME_FORMAT)] = true;
                 }
             }
             if (ShowDebugMessages)
@@ -478,6 +475,7 @@ namespace LSS.Services
                         var CourseInfo = Engine.CourseCatalog.Where(course => course.ID == input.CourseId).First();
                         if (Engine.Locations.First(z => z.ID == input.LocationIdLiteral).LocalInstructors.Any(x => CourseInfo.QualifiedInstructors.Any(y => x == y.Key)))
                         {
+                            Console.WriteLine($"subtracting {input.NumTimesToRun} from the score because of input {input.Id}");
                             Engine.BestPossibleScore -= input.NumTimesToRun;
                         }
                     }
