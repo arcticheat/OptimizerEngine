@@ -41,13 +41,14 @@ namespace LSS.Services
         /// <param name="showSetup">Will write to console debug images to display the data that is pulled in</param>
         /// <param name="StartDate">The beginning of the optimization range</param>
         /// <param name="EndDate">The end of the optimizaiton range</param>
-        internal OptimizerEngine Build()
+        internal OptimizerEngine Build(TimeSpan timeLimit)
         {
             if (ShowDebugMessages) Console.WriteLine("Pulling in data from the database...\n");
             Engine.ShowDebugMessages = ShowDebugMessages;
             Engine.StartDate = StartDate;
             Engine.EndDate = EndDate;
             Engine.context = context;
+            Engine.timeLimit = timeLimit;
 
             // Pull in instructors
             Engine.Instructors = context.User.Where(user => user.RoleID == 3).ToList();
@@ -129,7 +130,13 @@ namespace LSS.Services
             Engine.InstructorAssignments.RemoveAll(assignment => !Engine.Instructors.Any(instructor => instructor.Username == assignment.UserID));
 
             // Remove all assignments if its specified course isn't in the catalog
-            Engine.InstructorAssignments.RemoveAll(assignment => !Engine.CourseCatalog.Any(course => Engine.CurrentSchedule.FirstOrDefault(schedule => schedule.ID == assignment.ClassID).CourseID == course.ID));
+            Engine.InstructorAssignments.RemoveAll(assignment => !Engine.CourseCatalog.Any(course =>
+            {
+                if (Engine.CurrentSchedule.Any(schedule => schedule.ID == assignment.ClassID))
+                    return Engine.CurrentSchedule.First(schedule => schedule.ID == assignment.ClassID).CourseID == course.ID;
+                else
+                    return false;
+            }));
 
             // Update instructor assignments by marking them if they are local assignments
             Engine.InstructorAssignments.
@@ -165,17 +172,47 @@ namespace LSS.Services
                 Engine.CurrentSchedule.ForEach(classEvent => classEvent.CourseCode = Engine.CourseCatalog.First(course => course.ID == classEvent.CourseID).Code);
                 Engine.CurrentSchedule.ForEach(classEvent => classEvent.Location = Engine.Locations.First(loc => loc.ID == classEvent.LocationID).Code);
 
-                Console.WriteLine("Current Schedule");
-                ConsoleTable.From<ScheduledClassPrintable>(Engine.CurrentSchedule.Select(c => new ScheduledClassPrintable(c))).Write(Format.MarkDown);
-                Console.WriteLine("");
+                if (Engine.CurrentSchedule.Count > 0)
+                {
+                    Console.WriteLine("Current Schedule");
+                    try
+                    {
+                        ConsoleTable.From<ScheduledClassPrintable>(Engine.CurrentSchedule.Select(c => new ScheduledClassPrintable(c))).Write(Format.MarkDown);
+                    }
+                    catch
+                    {
 
-                Console.WriteLine("Instructor Assignments");
-                ConsoleTable.From<InstructorOfClass>(Engine.InstructorAssignments).Write(Format.MarkDown);
-                Console.WriteLine("");
+                    }
+                    Console.WriteLine("");
+                }
 
-                Console.WriteLine("Bookings");
-                ConsoleTable.From<BookingPrintable>(Engine.Exceptions.Select(e => new BookingPrintable(e))).Write(Format.MarkDown);
-                Console.WriteLine("");
+                if (Engine.InstructorAssignments.Count > 0)
+                {
+                    Console.WriteLine("Instructor Assignments");
+                    try
+                    {
+                        ConsoleTable.From<InstructorOfClass>(Engine.InstructorAssignments).Write(Format.MarkDown);
+                    }
+                    catch
+                    {
+
+                    }
+                    Console.WriteLine("");
+                }
+
+                if (Engine.Exceptions.Count > 0)
+                {
+                    Console.WriteLine("Bookings");
+                    try
+                    {
+                        ConsoleTable.From<BookingPrintable>(Engine.Exceptions.Select(e => new BookingPrintable(e))).Write(Format.MarkDown);
+                    }
+                    catch
+                    {
+
+                    }
+                    Console.WriteLine("");
+                }
 
                 Console.WriteLine("Locations");
                 ConsoleTable.From(Engine.Locations).Write(Format.MarkDown);
@@ -439,12 +476,19 @@ namespace LSS.Services
             if (ShowDebugMessages)
             {
                 Console.WriteLine("Optimizer Possible Inputs");
-                ConsoleTable.From<OptimizerInputPrintable>(Engine.Inputs.Select(x => new OptimizerInputPrintable(x))).Write(Format.MarkDown);
+                try
+                {
+                    ConsoleTable.From<OptimizerInputPrintable>(Engine.Inputs.Select(x => new OptimizerInputPrintable(x))).Write(Format.MarkDown);
+                }
+                catch
+                {
+
+                }
                 Console.WriteLine("");
             }
 
 
-            if (ShowDebugMessages) Console.Write("Predicting the best possible score for the engine...");
+            if (ShowDebugMessages) Console.WriteLine("Predicting the best possible score for the engine...");
 
             // Setup the best answer as something guarenteed to always be the worst
             Engine.CurrentBestAnswer = new OptimizerScheduleResults
@@ -475,8 +519,9 @@ namespace LSS.Services
                         var CourseInfo = Engine.CourseCatalog.Where(course => course.ID == input.CourseId).First();
                         if (Engine.Locations.First(z => z.ID == input.LocationIdLiteral).LocalInstructors.Any(x => CourseInfo.QualifiedInstructors.Any(y => x == y.Key)))
                         {
-                            Console.WriteLine($"subtracting {input.NumTimesToRun} from the score because of input {input.Id}");
-                            Engine.BestPossibleScore -= input.NumTimesToRun;
+                            Console.WriteLine($"Subtracting {input.MaxPossibleIterations} from the score because of input {input.Id}:");
+                            Console.WriteLine($"Location {input.LocationID} does not have a local, qualified instructor to teach a course of type {input.CourseCode}.");
+                            Engine.BestPossibleScore -= input.MaxPossibleIterations;
                         }
                     }
                     break;
@@ -489,9 +534,9 @@ namespace LSS.Services
                     break;
             }
 
-            if (ShowDebugMessages) Console.WriteLine($"{Engine.BestPossibleScore}. Done.\n");
+            if (ShowDebugMessages) Console.WriteLine($"The best possible score is {Engine.BestPossibleScore}.\n");
 
-
+            if (ShowDebugMessages) Console.WriteLine($"If the best possible answer is not found in {timeLimit}, the current best answer will be returned.\n");
             return Engine;
         }
     }

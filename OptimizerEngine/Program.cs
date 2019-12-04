@@ -34,7 +34,7 @@ namespace LSS
             var builder = new Services.OptimizerEngineBuilder(context, StartDate, EndDate, priority, debug);
 
             var handler = new OptimizerHandler(context, builder);
-            handler.Run();
+            handler.Run(new TimeSpan(24, 0, 0));
         }
     }
 }   

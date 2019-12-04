@@ -30,11 +30,11 @@ namespace LSS.Services
             watch = new System.Diagnostics.Stopwatch();
         }
 
-        public void Run()
+        public void Run(TimeSpan timeLimit)
         {
-            MyEngine = MyBuilder.Build();
+            MyEngine = MyBuilder.Build(timeLimit);
 
-            if (ShowDebugMessages) watch = System.Diagnostics.Stopwatch.StartNew();
+            watch = System.Diagnostics.Stopwatch.StartNew();
 
             Console.WriteLine("Optimizing...");
 
@@ -42,9 +42,9 @@ namespace LSS.Services
             thread.Start();
             ThreadInProgress = true;
             counter = 1;
+            MyEngine.watch = System.Diagnostics.Stopwatch.StartNew();
             while (ThreadInProgress)
             {
-                //cancellationToken.ThrowIfCancellationRequested();
                 if (MyEngine.MyPriority != Priority.FirstAvailable)
                 {
                     var status = MyEngine.GetStatus(counter++.ToString(), watch.Elapsed);
@@ -77,7 +77,14 @@ namespace LSS.Services
                 ConsoleTable.From<OptimizerInputPrintable>(MyEngine.Inputs.Select(x => new OptimizerInputPrintable(x))).Write(Format.MarkDown);
                 Console.WriteLine("");
                 Console.WriteLine("Preexisting Schedule");
-                ConsoleTable.From<ScheduledClassPrintable>(MyEngine.CurrentSchedule.Select(c => new ScheduledClassPrintable(c))).Write(Format.MarkDown);
+                try
+                {
+                    ConsoleTable.From<ScheduledClassPrintable>(MyEngine.CurrentSchedule.Select(c => new ScheduledClassPrintable(c))).Write(Format.MarkDown);
+                }
+                catch
+                {
+
+                }
                 switch (MyEngine.MyPriority)
                 {
                     case Priority.Default:

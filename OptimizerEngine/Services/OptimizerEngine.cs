@@ -8,6 +8,7 @@ using System.Text;
 using MoreLinq;
 using System.Threading;
 using System.Threading.Tasks;
+using System.Diagnostics;
 
 namespace LSS.Services
 {
@@ -18,14 +19,14 @@ namespace LSS.Services
     }
     public class OptimizerEngine
     {
-        public List<OptimizerInput> Inputs;
-        public List<ScheduledClass> CurrentSchedule;
-        public List<InstructorOfClass> InstructorAssignments;
-        public List<User> Instructors;
-        public List<Booking> Exceptions;
-        public List<Location> Locations;
-        public List<Course> CourseCatalog;
-        public Dictionary<int, Room> Rooms;
+        public List<OptimizerInput> Inputs = new List<OptimizerInput>();
+        public List<ScheduledClass> CurrentSchedule = new List<ScheduledClass>();
+        public List<InstructorOfClass> InstructorAssignments = new List<InstructorOfClass>();
+        public List<User> Instructors = new List<User>();
+        public List<Booking> Exceptions = new List<Booking>();
+        public List<Location> Locations = new List<Location>();
+        public List<Course> CourseCatalog = new List<Course>();
+        public Dictionary<int, Room> Rooms = new Dictionary<int, Room>();
         public string TIME_FORMAT = "MM/dd/yyyy";
         public DateTime StartDate;
         public DateTime EndDate;
@@ -41,6 +42,8 @@ namespace LSS.Services
         private bool ABestAnswerFound = false;
         public int BestPossibleScore;
         public List<OptimizerInput> WillAlwaysFail = new List<OptimizerInput>();
+        public TimeSpan timeLimit;
+        public Stopwatch watch;
 
         /// <summary>
         /// The optimizer will calculate a single collection of optimizer results created from the optimizer input
@@ -135,7 +138,8 @@ namespace LSS.Services
                     // but only the rooms that have the right type and quantity of resources required by this course type
                     foreach (var RoomID in Locations.Where(Loc => Loc.Code == CurrentInput.LocationID).First().
                         LocalRooms.Where(room => CourseInfo.RequiredResources.All(required =>
-                        Rooms[room].Resources_dict.ContainsKey(required.Key) && Rooms[room].Resources_dict[required.Key] >= required.Value )))
+                        Rooms[room].Resources_dict.ContainsKey(required.Key) && Rooms[room].Resources_dict[required.Key] != null ?
+                        Rooms[room].Resources_dict[required.Key] >= required.Value : true)))
                     {
                         // Determine if this room is available 
                         if (IsRoomAvailbleForDateRange(RoomID, ValidStartDate, ValidEndDate, IsRoomUnavailable))
@@ -217,8 +221,9 @@ namespace LSS.Services
             Dictionary<int, Dictionary<string, List<int>>> LocallyTaughtCoursesPerDay,
             int CurrentDepth)
         {
-            // Always check if the best answer is already found
-            if (IsABestAnswerFound())
+
+            // Always check if the best answer is already found or if the time is up
+            if (IsABestAnswerFound() || TimeSpan.Compare(watch.Elapsed, timeLimit) > 0)
             {
                 return CurrentBestAnswer;
             }
@@ -328,7 +333,8 @@ namespace LSS.Services
                             // but only the rooms that have the right type and quantity of resources required by this course type
                             foreach (var RoomID in Locations.Where(Loc => Loc.Code == CurrentInput.LocationID).First().
                                 LocalRooms.Where(room => CourseInfo.RequiredResources.All(required =>
-                                Rooms[room].Resources_dict.ContainsKey(required.Key) && Rooms[room].Resources_dict[required.Key] >= required.Value)))
+                                Rooms[room].Resources_dict.ContainsKey(required.Key) && Rooms[room].Resources_dict[required.Key] != null ?
+                                Rooms[room].Resources_dict[required.Key] >= required.Value : true)))
                             {
                                 // Determine if this room is available 
                                 if (IsRoomAvailbleForDateRange(RoomID, ValidStartDate, ValidEndDate, IsRoomUnavailable))
@@ -414,9 +420,11 @@ namespace LSS.Services
                                     }
                                 }
 
-                                // Always check if the best answer is already found
-                                if (IsABestAnswerFound())
-                                    return CurrentBestAnswer;                          
+                                // Always check if the best answer is already found or if the time limit is up
+                                if (IsABestAnswerFound() || TimeSpan.Compare(watch.Elapsed, timeLimit) > 0)
+                                {
+                                    return CurrentBestAnswer;
+                                }
                             }
                         }
                     }
@@ -453,8 +461,8 @@ namespace LSS.Services
                     CRCopy_skip, LTCPDCopy_skip, CurrentDepth + CurrentInput.RemainingRuns));
 
 
-                // Always check if the best answer is already found
-                if (IsABestAnswerFound())
+                // Always check if the best answer is already found or if the time limit is up
+                if (IsABestAnswerFound() || TimeSpan.Compare(watch.Elapsed, timeLimit) > 0)
                 {
                     return CurrentBestAnswer;
                 }
@@ -473,8 +481,8 @@ namespace LSS.Services
             Dictionary<int, Dictionary<string, List<int>>> LocallyTaughtCoursesPerDay,
             int CurrentDepth, List<Course> Catalog)
         {
-            // Always check if the best answer is already found
-            if (IsABestAnswerFound())
+            // Always check if the best answer is already found or if the time limit is up
+            if (IsABestAnswerFound() || TimeSpan.Compare(watch.Elapsed, timeLimit) > 0)
             {
                 return CurrentBestAnswer;
             }
@@ -548,7 +556,8 @@ namespace LSS.Services
                             // but only the rooms that have the right type and quantity of resources required by this course type
                             foreach (var RoomID in Locations.Where(Loc => Loc.Code == CurrentInput.LocationID).First().
                                 LocalRooms.Where(room => CourseInfo.RequiredResources.All(required =>
-                                Rooms[room].Resources_dict.ContainsKey(required.Key) && Rooms[room].Resources_dict[required.Key] >= required.Value)))
+                                Rooms[room].Resources_dict.ContainsKey(required.Key) && Rooms[room].Resources_dict[required.Key] != null ?
+                                Rooms[room].Resources_dict[required.Key] >= required.Value : true)))
                             {
                                 // Determine if this room is available 
                                 if (IsRoomAvailbleForDateRange(RoomID, ValidStartDate, ValidEndDate, IsRoomUnavailable))
@@ -621,9 +630,11 @@ namespace LSS.Services
                                     }
                                 }
 
-                                // Always check if the best answer is already found
-                                if (IsABestAnswerFound())
+                                // Always check if the best answer is already found or if the time limit is up
+                                if (IsABestAnswerFound() || TimeSpan.Compare(watch.Elapsed, timeLimit) > 0)
+                                {
                                     return CurrentBestAnswer;
+                                }
                             }
                         }
                     }
@@ -661,8 +672,8 @@ namespace LSS.Services
                     CRCopy_skip, LTCPDCopy_skip, CurrentDepth + CurrentInput.RemainingRuns, CatalogCopy_skip));
 
 
-                // Always check if the best answer is already found
-                if (IsABestAnswerFound())
+                // Always check if the best answer is already found or if the time limit is up
+                if (IsABestAnswerFound() || TimeSpan.Compare(watch.Elapsed, timeLimit) > 0)
                 {
                     return CurrentBestAnswer;
                 }
@@ -729,7 +740,6 @@ namespace LSS.Services
                     bool InstructorIsAvailable = false;
                     foreach (var Instructor in CourseInfo.QualifiedInstructors)
                     {
-                        //Console.WriteLine("")
                         // Determine if this instructor is available for the range
                         if (IsInstructorAvailableForDateRange(Instructor.Key, ValidStartDate, ValidEndDate, isInstructorUnavailable))
                         {
@@ -757,7 +767,6 @@ namespace LSS.Services
                         Rooms[room].Resources_dict.ContainsKey(required.Key) && Rooms[room].Resources_dict[required.Key] != null ?
                         Rooms[room].Resources_dict[required.Key] >= required.Value : true)))
                     {
-                        Console.WriteLine(RoomID);
                         // Determine if this room is available 
                         if (IsRoomAvailbleForDateRange(RoomID, ValidStartDate, ValidEndDate, isRoomUnavailable))
                         {
